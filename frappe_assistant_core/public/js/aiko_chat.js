@@ -82,13 +82,123 @@ class AikoChatWidget {
         msgDiv.className = `aiko-message ${sender}`;
 
         if (isHtml) {
-            msgDiv.innerHTML = text; // Expecting markdown converted to HTML from backend
+            msgDiv.innerHTML = text;
         } else {
             msgDiv.textContent = text;
         }
 
         this.messagesContainer.appendChild(msgDiv);
         this.scrollToBottom();
+    }
+
+    formatMarkdown(text) {
+        if (typeof marked !== 'undefined') {
+            return marked.parse ? marked.parse(text) : marked(text);
+        } else if (typeof showdown !== 'undefined') {
+            let converter = new showdown.Converter();
+            return converter.makeHtml(text);
+        } else {
+            return text.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+        }
+    }
+
+    renderStructuredResponse(data) {
+        const responseContainer = document.createElement('div');
+        responseContainer.className = 'aiko-message ai structured-response';
+        
+        // 1. Text Content
+        if (data.messages && data.messages.length > 0) {
+            let combinedContent = data.messages.map(m => m.content).join('\n\n');
+            if (combinedContent.trim()) {
+                const textDiv = document.createElement('div');
+                textDiv.innerHTML = this.formatMarkdown(combinedContent);
+                responseContainer.appendChild(textDiv);
+            }
+        }
+        
+        // 2. Document Cards
+        if (data.documents && data.documents.length > 0) {
+            data.documents.forEach(doc => {
+                const card = document.createElement('div');
+                card.className = 'aiko-document-card';
+                card.innerHTML = `
+                    <div class="aiko-document-card-title">📄 ${doc.doctype}</div>
+                    <div style="font-size: 13px; color: #475569;">Name: <strong>${doc.name}</strong></div>
+                    <button class="aiko-document-card-btn" onclick="frappe.set_route('Form', '${doc.doctype}', '${doc.name}')">Open Document</button>
+                `;
+                responseContainer.appendChild(card);
+            });
+        }
+        
+        // 3. Suggestions
+        if (data.suggestions && data.suggestions.length > 0) {
+            const suggestionsDiv = document.createElement('div');
+            suggestionsDiv.className = 'aiko-suggestions';
+            data.suggestions.forEach(s => {
+                const chip = document.createElement('button');
+                chip.className = 'aiko-suggestion-chip';
+                chip.textContent = s;
+                chip.onclick = () => {
+                    this.input.value = s;
+                    this.sendMessage();
+                };
+                suggestionsDiv.appendChild(chip);
+            });
+            responseContainer.appendChild(suggestionsDiv);
+        }
+        
+        // 4. Activity Log
+        if (data.activities && data.activities.length > 0) {
+            const activityDiv = document.createElement('div');
+            activityDiv.className = 'aiko-activity-section';
+            
+            const header = document.createElement('div');
+            header.className = 'aiko-activity-header';
+            header.innerHTML = `<span>▶ Agent Activity</span><span>${data.activities.length} steps</span>`;
+            
+            const list = document.createElement('div');
+            list.className = 'aiko-activity-list collapsed'; // Auto-collapse when completed
+            
+            data.activities.forEach(act => {
+                const item = document.createElement('div');
+                item.className = 'aiko-activity-item';
+                let icon = '⏳';
+                if (act.status === 'success') icon = '✓';
+                else if (act.status === 'error') icon = '❌';
+                else if (act.status === 'thought') icon = '💭';
+                
+                if (act.status === 'thought' && act.args && act.args.text) {
+                    item.style.flexDirection = 'column';
+                    item.style.alignItems = 'flex-start';
+                    item.innerHTML = `
+                        <div style="display: flex; gap: 6px; font-weight: 600;">
+                            <span class="aiko-activity-icon">${icon}</span> <span>Reasoning</span>
+                        </div>
+                        <div style="padding-left: 20px; color: #64748b; font-style: italic; white-space: pre-wrap; font-size: 11px;">${act.args.text}</div>
+                    `;
+                } else {
+                    item.innerHTML = `<span class="aiko-activity-icon">${icon}</span> <span>${act.tool}</span>`;
+                }
+                list.appendChild(item);
+            });
+            
+            header.onclick = () => {
+                list.classList.toggle('collapsed');
+                header.querySelector('span').textContent = list.classList.contains('collapsed') ? '▶ Agent Activity' : '▼ Agent Activity';
+            };
+            
+            activityDiv.appendChild(header);
+            activityDiv.appendChild(list);
+            
+            responseContainer.appendChild(activityDiv);
+        }
+        
+        if (responseContainer.childNodes.length > 0) {
+            this.messagesContainer.appendChild(responseContainer);
+            this.scrollToBottom();
+        } else {
+            this.addMessage("Task completed successfully.", "ai");
+        }
     }
 
     addTypingIndicator() {
@@ -139,18 +249,12 @@ class AikoChatWidget {
                 this.input.focus();
 
                 if (r.message && r.message.success) {
-                    // Use marked.js if available in Frappe, otherwise raw text
-                    let formattedResponse = r.message.data;
-                    if (typeof marked !== 'undefined') {
-                        formattedResponse = marked(formattedResponse);
-                    } else if (typeof showdown !== 'undefined') {
-                        let converter = new showdown.Converter();
-                        formattedResponse = converter.makeHtml(formattedResponse);
-                    } else {
-                        // Simple fallback for bold and line breaks
-                        formattedResponse = formattedResponse.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+                    const data = r.message.data;
+                    if (typeof data === 'string') {
+                        this.addMessage(this.formatMarkdown(data), 'ai', true);
+                    } else if (typeof data === 'object') {
+                        this.renderStructuredResponse(data);
                     }
-                    this.addMessage(formattedResponse, 'ai', true);
                 } else {
                     const errorMsg = (r.message && r.message.error) ? r.message.error : 'Failed to connect to AIKO.';
                     this.addMessage('Error: ' + errorMsg, 'ai');

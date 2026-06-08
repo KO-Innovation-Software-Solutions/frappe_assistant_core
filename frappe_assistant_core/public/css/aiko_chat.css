@@ -107,6 +107,14 @@
     box-shadow: 0 1px 2px rgba(0,0,0,0.05);
 }
 
+.aiko-message.ai.structured-response {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-width: 95%;
+    padding: 14px;
+}
+
 .aiko-message.ai pre {
     background: #1e293b;
     color: #f8fafc;
@@ -186,4 +194,99 @@
 @keyframes aiko-bounce {
     0%, 80%, 100% { transform: scale(0); }
     40% { transform: scale(1); }
+}
+
+/* Document Cards */
+.aiko-document-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 12px;
+    background: #f8fafc;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.aiko-document-card-title {
+    font-weight: 600;
+    color: #334155;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.aiko-document-card-btn {
+    background: #6e8efb;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    align-self: flex-start;
+    text-decoration: none;
+}
+.aiko-document-card-btn:hover {
+    background: #5b7ce3;
+}
+
+/* Suggestions */
+.aiko-suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 4px;
+}
+.aiko-suggestion-chip {
+    background: #e2e8f0;
+    border: 1px solid #cbd5e1;
+    border-radius: 16px;
+    padding: 6px 12px;
+    font-size: 12px;
+    color: #475569;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.aiko-suggestion-chip:hover {
+    background: #cbd5e1;
+    color: #1e293b;
+}
+
+/* Agent Activity */
+.aiko-activity-section {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #ffffff;
+}
+.aiko-activity-header {
+    background: #f1f5f9;
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #64748b;
+    display: flex;
+    justify-content: space-between;
+    cursor: pointer;
+    user-select: none;
+}
+.aiko-activity-list {
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 12px;
+    color: #475569;
+    max-height: 200px;
+    overflow-y: auto;
+}
+.aiko-activity-list.collapsed {
+    display: none;
+}
+.aiko-activity-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.aiko-activity-icon {
+    font-size: 14px;
 }

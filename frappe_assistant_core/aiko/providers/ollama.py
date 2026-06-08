@@ -99,9 +99,10 @@ class OllamaProvider:
 
         return None
 
-    async def process_query(self, query: str, session, system_prompt: str) -> str:
+    async def process_query(self, query: str, session, system_prompt: str, thread_id: str) -> dict:
         """Process a query using the configured provider and available tools"""
         from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+        import frappe
         
         response = await session.list_tools()
         tools = response.tools
@@ -110,33 +111,75 @@ class OllamaProvider:
         system_message_content = f"{system_prompt}\n\nAvailable tools:\n{tools_info}\n\nFormat your response as a JSON object with 'tool' and 'parameters' fields when calling tools."
         
         messages = [
-            SystemMessage(content=system_message_content),
-            HumanMessage(content=f"Task: {query}\n\nWhat should be my first step?")
+            SystemMessage(content=system_message_content)
         ]
+        
+        # Load chat history for multi-turn context
+        history_key = f"aiko_history_{thread_id}"
+        chat_history = frappe.cache().get_value(history_key) or []
+        for msg in chat_history:
+            if msg.get("role") == "user":
+                messages.append(HumanMessage(content=msg.get("content", "")))
+            elif msg.get("role") == "assistant":
+                messages.append(AIMessage(content=msg.get("content", "")))
+        
+        messages.append(HumanMessage(content=f"Task: {query}\n\nWhat should be my first step?"))
 
-        final_text = []
+        structured_response = {
+            "messages": [],
+            "activities": [],
+            "documents": [],
+            "suggestions": []
+        }
         tool_call_history = []
 
         for _ in range(15): # Max iteration limit
             response_msg = await self.llm.ainvoke(messages)
             messages.append(AIMessage(content=response_msg.content))
             
-            action = self._parse_next_action(str(response_msg.content), tools)
+            content_str = str(response_msg.content)
+            
+            # Remove any raw JSON or python blocks from the content so they don't show up in the chat UI
+            clean_content = re.sub(r'```json.*?```', '', content_str, flags=re.DOTALL).strip()
+            clean_content = re.sub(r'```python.*?```', '', clean_content, flags=re.DOTALL).strip()
+            
+            # Remove any [Calling tool ...] hallucinatory logs
+            clean_content = re.sub(r'\[Calling tool.*?\]', '', clean_content, flags=re.DOTALL).strip()
+            
+            # Remove "Task completed successfully!" as the frontend handles completion
+            clean_content = re.sub(r'Task completed successfully!', '', clean_content, flags=re.IGNORECASE).strip()
+            
+            # If the entire message was just a JSON object (e.g. for a tool call), hide it completely
+            if clean_content.startswith('{') and clean_content.endswith('}'):
+                clean_content = ""
+            
+            action = self._parse_next_action(content_str, tools)
+            
+            # Classify content as intermediate thought or final message
+            if clean_content and clean_content.lower() not in ["task complete", "task is complete"]:
+                if action and action.get("tool") not in ["task_complete", "None", None]:
+                    structured_response["activities"].append({
+                        "tool": "Reasoning",
+                        "args": {"text": clean_content},
+                        "status": "thought"
+                    })
+                else:
+                    structured_response["messages"].append({
+                        "type": "assistant",
+                        "content": clean_content
+                    })
             
             if not action:
-                if "task complete" in str(response_msg.content).lower() or "task is complete" in str(response_msg.content).lower():
-                    final_text.append(str(response_msg.content))
+                if "task complete" in content_str.lower() or "task is complete" in content_str.lower():
                     break
                 
-                final_text.append(str(response_msg.content))
                 messages.append(HumanMessage(content="If you are done, just say 'Task complete'. Otherwise, provide a specific action to take using one of the available tools. Format your response as a JSON object with 'tool' and 'parameters' fields."))
                 continue
 
             tool_name = action.get("tool")
             parameters = action.get("parameters", {})
 
-            if tool_name == "task_complete":
-                final_text.append("Task completed successfully!")
+            if tool_name == "task_complete" or tool_name == "None" or not tool_name:
                 break
 
             call_signature = f"{tool_name}::{json.dumps(parameters, sort_keys=True)}"
@@ -148,7 +191,18 @@ class OllamaProvider:
 
             try:
                 result = await session.call_tool(tool_name, parameters)
-                final_text.append(f"[Calling tool {tool_name} with args {parameters}]")
+                
+                structured_response["activities"].append({
+                    "tool": tool_name,
+                    "args": parameters,
+                    "status": "success"
+                })
+                
+                if tool_name == "get_document" and "doctype" in parameters and "name" in parameters:
+                    structured_response["documents"].append({
+                        "doctype": parameters.get("doctype"),
+                        "name": parameters.get("name")
+                    })
                 
                 text_contents = []
                 if hasattr(result, "content") and isinstance(result.content, list):
@@ -162,7 +216,53 @@ class OllamaProvider:
                     result_text = str(result.content if hasattr(result, "content") else result)
             except Exception as e:
                 result_text = f"Error executing tool: {str(e)}"
+                structured_response["activities"].append({
+                    "tool": tool_name,
+                    "args": parameters,
+                    "status": "error"
+                })
 
             messages.append(HumanMessage(content=f"Action result: {result_text}\n\nWhat should be my next step?"))
 
-        return "\n".join(final_text)
+        # Generate suggestions based on documents
+        suggestions = []
+        for doc in structured_response["documents"]:
+            dt = doc["doctype"]
+            name = doc["name"]
+            if dt == "Vehicle":
+                suggestions.extend([
+                    f"Show telematics history for {name}",
+                    f"Show latest location of {name}",
+                    f"Who is assigned to {name}?",
+                    "List all vehicles"
+                ])
+            elif dt == "Customer":
+                suggestions.extend([
+                    "Show recent orders",
+                    "Show outstanding balance",
+                    "Show contact details",
+                    "List related invoices"
+                ])
+            elif dt == "Sales Order":
+                suggestions.extend([
+                    "Show items in this order",
+                    "Show payment status",
+                    "Show customer details",
+                    "List related invoices"
+                ])
+        
+        # Remove duplicates while preserving order
+        structured_response["suggestions"] = list(dict.fromkeys(suggestions))
+
+        # Save the conversational multi-turn context
+        final_answer = "\n".join([m["content"] for m in structured_response["messages"]])
+        if not final_answer.strip():
+            final_answer = "Task complete."
+            
+        chat_history.append({"role": "user", "content": query})
+        chat_history.append({"role": "assistant", "content": final_answer})
+        
+        # Keep only the last 10 messages (5 user/assistant turns)
+        frappe.cache().set_value(history_key, chat_history[-10:], expires_in_sec=86400)
+
+        return structured_response

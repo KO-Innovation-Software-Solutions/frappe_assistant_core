@@ -68,10 +68,10 @@ class AikoAgent:
 
         await self.session.initialize()
 
-    async def process_query(self, query: str) -> str:
+    async def process_query(self, query: str) -> dict:
         """Process a query using the configured provider and available tools"""
         system_prompt = self.get_system_prompt()
-        return await self.provider.process_query(query, self.session, system_prompt)
+        return await self.provider.process_query(query, self.session, system_prompt, self.thread_id)
 
     async def cleanup(self):
         if hasattr(self, '_session_context') and self._session_context:
@@ -79,11 +79,11 @@ class AikoAgent:
         if hasattr(self, '_streams_context') and self._streams_context:
             await self._streams_context.__aexit__(None, None, None)
 
-    def invoke(self, message: str) -> str:
+    def invoke(self, message: str) -> dict:
         """Synchronous wrapper for the Frappe Framework."""
         return asyncio.run(self._async_invoke(message))
 
-    async def _async_invoke(self, message: str) -> str:
+    async def _async_invoke(self, message: str) -> dict:
         await self.connect_to_streamable_http_server()
         try:
             return await self.process_query(message)
