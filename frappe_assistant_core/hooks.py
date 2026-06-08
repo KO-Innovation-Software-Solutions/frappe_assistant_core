@@ -30,12 +30,12 @@ app_version = app_version
 # ------------------
 
 # include js, css files in header of desk.html
-# app_include_css = "/assets/frappe_assistant_core/css/frappe_assistant_core.css"
-# app_include_js = "/assets/frappe_assistant_core/js/frappe_assistant_core.js"
+app_include_css = "/assets/frappe_assistant_core/css/aiko_chat.css"
+app_include_js = "/assets/frappe_assistant_core/js/aiko_chat.js"
 
 # include js, css files in header of web template
-# web_include_css = "/assets/frappe_assistant_core/css/frappe_assistant_core.css"
-# web_include_js = "/assets/frappe_assistant_core/js/frappe_assistant_core.js"
+web_include_css = "/assets/frappe_assistant_core/css/aiko_chat.css"
+web_include_js = "/assets/frappe_assistant_core/js/aiko_chat.js"
 
 # include custom scss in every website theme (without file extension ".scss")
 # website_theme_scss = "frappe_assistant_core/public/scss/website"
