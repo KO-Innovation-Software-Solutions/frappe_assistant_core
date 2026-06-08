@@ -173,7 +173,7 @@ class OllamaProvider:
                 if "task complete" in content_str.lower() or "task is complete" in content_str.lower():
                     break
                 
-                messages.append(HumanMessage(content="If you are done, just say 'Task complete'. Otherwise, provide a specific action to take using one of the available tools. Format your response as a JSON object with 'tool' and 'parameters' fields."))
+                messages.append(HumanMessage(content="If you are done, please provide a clear summary of your findings or the action you took to the user, and then just say 'Task complete'. Otherwise, provide a specific action to take using one of the available tools. Format your response as a JSON object with 'tool' and 'parameters' fields."))
                 continue
 
             tool_name = action.get("tool")
