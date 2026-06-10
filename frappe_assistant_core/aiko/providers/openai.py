@@ -1,31 +1,87 @@
-from .base import BaseProvider
+import json
+import os
+from openai import OpenAI
 
-class OpenAIProvider(BaseProvider):
+class OpenAIProvider:
     def __init__(self, settings):
-        super().__init__(settings)
-        from langchain_openai import ChatOpenAI
-        import frappe
+        self.settings = settings
+        api_key = self.settings.get_password("openai_api_key") or os.getenv("DEEPINFRA_API_KEY") or "fake-key"
+        base_url = self.settings.get("openai_url") or "https://api.openai.com/v1"
+        self.model = self.settings.get("openai_model") or "gpt-4o"
         
-        try:
-            self.api_key = self.settings.get_password("openai_api_key")
-        except Exception:
-            self.api_key = getattr(self.settings, "openai_api_key", None)
-        
-        if not self.api_key:
-            frappe.throw("OpenAI API key is missing. Please set it in Assistant Core Settings.")
-        
-        self.api_key = self.api_key.strip()
-        
-        frappe.logger().info(f"OpenAI key length: {len(self.api_key)}, prefix: {self.api_key[:8]}")
-        
-        # Pull model and base_url from settings instead of hardcoding
-        self.model = getattr(self.settings, "openai_model", None)
-        self.base_url = getattr(self.settings, "openai_url", None)
-        
-        self.llm = ChatOpenAI(
-            model=self.model,
-            api_key=self.api_key,
-            base_url=self.base_url,
-            temperature=0.0,
-            max_tokens=4096,
+        self.openai = OpenAI(
+            api_key=api_key,
+            base_url=base_url
         )
+        
+    async def process_query(self, query: str, session, messages: list) -> tuple[str, list]:
+        tools = []
+        if session:
+            response = await session.list_tools()
+            for tool in response.tools:
+                tools.append({
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description or "",
+                        "parameters": tool.inputSchema,
+                    },
+                })
+                
+        messages.append({"role": "user", "content": query})
+        
+        while True:
+            response = self.openai.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                tools=tools if tools else None,
+                tool_choice="auto" if tools else None,
+            )
+            
+            assistant_message = response.choices[0].message
+            
+            if not assistant_message.tool_calls:
+                final_answer = assistant_message.content or ""
+                messages.append({"role": "assistant", "content": final_answer})
+                return final_answer, messages
+            
+            messages.append({
+                "role": "assistant",
+                "content": assistant_message.content,
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    }
+                    for tc in assistant_message.tool_calls
+                ],
+            })
+            
+            for tool_call in assistant_message.tool_calls:
+                tool_name = tool_call.function.name
+                try:
+                    tool_args = json.loads(tool_call.function.arguments)
+                except Exception:
+                    tool_args = {}
+                
+                try:
+                    if session:
+                        result = await session.call_tool(tool_name, tool_args)
+                        if isinstance(result.content, list):
+                            tool_result = "\n".join(str(item) for item in result.content)
+                        else:
+                            tool_result = str(result.content)
+                    else:
+                        tool_result = "No session available."
+                except Exception as e:
+                    tool_result = f"Error calling tool: {e}"
+                    
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": tool_result,
+                })

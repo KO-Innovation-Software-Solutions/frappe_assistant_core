@@ -30,7 +30,7 @@ class MCPClient:
                 "DEEPINFRA_API_KEY",
                 "JyrEuDM0UKCf8nRNlEhBI6E2AHpcV1Lo"
             ),
-            base_url="https://api.deepinfra.com/v1/openai"
+            base_url="http://ollama.kofleetz.in:3900"
         )
         self._streams_context = None
         self._session_context = None
