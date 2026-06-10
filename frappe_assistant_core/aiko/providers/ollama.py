@@ -40,7 +40,7 @@ class OllamaProvider:
                 model=self.model,
                 messages=messages,
                 tools=tools if tools else None,
-                tool_choice="auto" if tools else None,
+                # tool_choice="auto" if tools else None,
             )
             
             assistant_message = response.choices[0].message

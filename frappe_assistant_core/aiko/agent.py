@@ -31,8 +31,7 @@ class AikoAgent:
         self._streams_context = None
         self._session_context = None
         
-        self.cache_key = f"aiko_history_{self.thread_id}"
-        self.messages = frappe.cache().get_value(self.cache_key) or [
+        self.messages = [
             {
                 "role": "system",
                 "content": (
@@ -43,8 +42,6 @@ class AikoAgent:
             }
         ]
 
-    def _save_history(self):
-        frappe.cache().set_value(self.cache_key, self.messages, expires_in_sec=86400) # 24 hours
 
     def _trim_history(self):
         if len(self.messages) > MAX_HISTORY_MESSAGES:
@@ -95,7 +92,6 @@ class AikoAgent:
             final_answer, updated_messages = await self.provider.process_query(query, self.session, self.messages)
             self.messages = updated_messages
             self._trim_history()
-            self._save_history()
             return final_answer
         finally:
             await self.cleanup()
