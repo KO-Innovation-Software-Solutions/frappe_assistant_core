@@ -109,21 +109,27 @@ class OllamaProvider:
         
         tools_info = "\n".join([f"- {tool.name}: {tool.description},'inputSchema':{tool.inputSchema}" for tool in tools])
         system_message_content = f"{system_prompt}\n\nAvailable tools:\n{tools_info}\n\nFormat your response as a JSON object with 'tool' and 'parameters' fields when calling tools."
-        
+        # Build doctype hint from available tools
+        doctype_hint = """
+        DOCTYPE MATCHING
+        - User may type in any case: "sales order", "SALES ORDER", "Sales order" — all mean "Sales Order"
+        - Always convert doctype to PascalCase with spaces before calling tools
+        - Examples: "eway bill" → "Eway Bill", "sales order" → "Sales Order", "vehicle" → "Vehicle", "vehicle" → "Vehicles"
+        """
         messages = [
             SystemMessage(content=system_message_content)
         ]
         
         # Load chat history for multi-turn context
-        history_key = f"aiko_history_{thread_id}"
-        chat_history = frappe.cache().get_value(history_key) or []
-        for msg in chat_history:
-            if msg.get("role") == "user":
-                messages.append(HumanMessage(content=msg.get("content", "")))
-            elif msg.get("role") == "assistant":
-                messages.append(AIMessage(content=msg.get("content", "")))
+        # history_key = f"aiko_history_{thread_id}"
+        # chat_history = frappe.cache().get_value(history_key) or []
+        # for msg in chat_history:
+        #     if msg.get("role") == "user":
+        #         messages.append(HumanMessage(content=msg.get("content", "")))
+        #     elif msg.get("role") == "assistant":
+        #         messages.append(AIMessage(content=msg.get("content", "")))
         
-        messages.append(HumanMessage(content=f"Task: {query}\n\nWhat should be my first step?"))
+        # messages.append(HumanMessage(content=f"Task: {query}\n\nWhat should be my first step?"))
 
         structured_response = {
             "messages": [],
@@ -163,11 +169,16 @@ class OllamaProvider:
                         "args": {"text": clean_content},
                         "status": "thought"
                     })
-                else:
-                    structured_response["messages"].append({
-                        "type": "assistant",
-                        "content": clean_content
-                    })
+
+                elif not action:
+                    # Only add to messages if it's truly a final response (no more tool calls coming)
+                    # Store temporarily, will be set as final message at end
+                    structured_response["_pending_message"] = clean_content
+                # else:
+                #     structured_response["messages"].append({
+                #         "type": "assistant",
+                #         "content": clean_content
+                #     })
             
             if not action:
                 if "task complete" in content_str.lower() or "task is complete" in content_str.lower():
@@ -224,45 +235,56 @@ class OllamaProvider:
 
             messages.append(HumanMessage(content=f"Action result: {result_text}\n\nWhat should be my next step?"))
 
-        # Generate suggestions based on documents
-        suggestions = []
-        for doc in structured_response["documents"]:
-            dt = doc["doctype"]
-            name = doc["name"]
-            if dt == "Vehicle":
-                suggestions.extend([
-                    f"Show telematics history for {name}",
-                    f"Show latest location of {name}",
-                    f"Who is assigned to {name}?",
-                    "List all vehicles"
-                ])
-            elif dt == "Customer":
-                suggestions.extend([
-                    "Show recent orders",
-                    "Show outstanding balance",
-                    "Show contact details",
-                    "List related invoices"
-                ])
-            elif dt == "Sales Order":
-                suggestions.extend([
-                    "Show items in this order",
-                    "Show payment status",
-                    "Show customer details",
-                    "List related invoices"
-                ])
-        
-        # Remove duplicates while preserving order
-        structured_response["suggestions"] = list(dict.fromkeys(suggestions))
 
-        # Save the conversational multi-turn context
-        final_answer = "\n".join([m["content"] for m in structured_response["messages"]])
-        if not final_answer.strip():
-            final_answer = "Task complete."
-            
-        chat_history.append({"role": "user", "content": query})
-        chat_history.append({"role": "assistant", "content": final_answer})
+        # Set final message only
+        if structured_response.get("_pending_message"):
+            structured_response["messages"].append({
+                "type": "assistant",
+                "content": structured_response.pop("_pending_message")
+            })
+        else:
+            structured_response.pop("_pending_message", None)
+
+
+        # Generate suggestions based on documents
+        # suggestions = []
+        # for doc in structured_response["documents"]:
+        #     dt = doc["doctype"]
+        #     name = doc["name"]
+        #     if dt == "Vehicle":
+        #         suggestions.extend([
+        #             f"Show telematics history for {name}",
+        #             f"Show latest location of {name}",
+        #             f"Who is assigned to {name}?",
+        #             "List all vehicles"
+        #         ])
+        #     elif dt == "Customer":
+        #         suggestions.extend([
+        #             "Show recent orders",
+        #             "Show outstanding balance",
+        #             "Show contact details",
+        #             "List related invoices"
+        #         ])
+        #     elif dt == "Sales Order":
+        #         suggestions.extend([
+        #             "Show items in this order",
+        #             "Show payment status",
+        #             "Show customer details",
+        #             "List related invoices"
+        #         ])
         
-        # Keep only the last 10 messages (5 user/assistant turns)
-        frappe.cache().set_value(history_key, chat_history[-10:], expires_in_sec=86400)
+        # # Remove duplicates while preserving order
+        # structured_response["suggestions"] = list(dict.fromkeys(suggestions))
+
+        # # Save the conversational multi-turn context
+        # final_answer = "\n".join([m["content"] for m in structured_response["messages"]])
+        # if not final_answer.strip():
+        #     final_answer = "Task complete."
+            
+        # chat_history.append({"role": "user", "content": query})
+        # chat_history.append({"role": "assistant", "content": final_answer})
+        
+        # # Keep only the last 10 messages (5 user/assistant turns)
+        # frappe.cache().set_value(history_key, chat_history[-10:], expires_in_sec=86400)
 
         return structured_response
