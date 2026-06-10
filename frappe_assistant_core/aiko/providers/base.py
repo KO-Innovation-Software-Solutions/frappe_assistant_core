@@ -99,12 +99,6 @@ class BaseProvider:
         tools_info = "\n".join([f"- {tool.name}: {tool.description},'inputSchema':{tool.inputSchema}" for tool in tools])
         system_message_content = f"{system_prompt}\n\nAvailable tools:\n{tools_info}\n\nFormat your response as a JSON object with 'tool' and 'parameters' fields when calling tools."
         # Build doctype hint from available tools
-        doctype_hint = """
-        DOCTYPE MATCHING
-        - User may type in any case: "sales order", "SALES ORDER", "Sales order" — all mean "Sales Order"
-        - Always convert doctype to PascalCase with spaces before calling tools
-        - Examples: "eway bill" → "Eway Bill", "sales order" → "Sales Order", "vehicle" → "Vehicle", "vehicle" → "Vehicles"
-        """
         messages = [
             SystemMessage(content=system_message_content)
         ]
