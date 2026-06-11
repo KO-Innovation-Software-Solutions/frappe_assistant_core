@@ -5,9 +5,9 @@ from openai import OpenAI
 class OpenAIProvider:
     def __init__(self, settings):
         self.settings = settings
-        api_key = self.settings.get_password("openai_api_key") or os.getenv("DEEPINFRA_API_KEY") or "fake-key"
-        base_url = self.settings.get("openai_url") or "https://api.openai.com/v1"
-        self.model = self.settings.get("openai_model") or "gpt-4o"
+        api_key = self.settings.get_password("openai_api_key") 
+        base_url = self.settings.get("openai_url")
+        self.model = self.settings.get("openai_model")
         
         self.openai = OpenAI(
             api_key=api_key,

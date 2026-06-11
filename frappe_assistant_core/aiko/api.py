@@ -19,7 +19,8 @@ def chat(message: str, thread_id: str):
             "data": response_text
         }
     except Exception as e:
-        frappe.log_error(title="AIKO Chat Error", message=str(e))
+        import traceback
+        frappe.log_error(title="AIKO Chat Error", message=traceback.format_exc())
         return {
             "success": False,
             "error": str(e)
