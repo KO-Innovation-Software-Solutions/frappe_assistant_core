@@ -64,18 +64,49 @@
     letter-spacing: 0.5px;
 }
 
+.aiko-chat-header-actions {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+}
+
+#aiko-chat-fullscreen,
 #aiko-chat-close {
     background: none;
     border: none;
     color: white;
-    font-size: 24px;
     cursor: pointer;
     opacity: 0.8;
     transition: opacity 0.2s;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
+#aiko-chat-close {
+    font-size: 24px;
+    line-height: 1;
+}
+
+#aiko-chat-fullscreen:hover,
 #aiko-chat-close:hover {
     opacity: 1;
+}
+
+#aiko-chat-window.fullscreen {
+    position: fixed;
+    top: 5vh;
+    left: 5vw;
+    width: 90vw;
+    height: 90vh;
+    max-height: 90vh;
+    max-width: 90vw;
+    bottom: auto;
+    right: auto;
+    z-index: 10000;
+    animation: none;
+    border-radius: 20px;
 }
 
 .aiko-chat-messages {

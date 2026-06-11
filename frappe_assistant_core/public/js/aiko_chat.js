@@ -9,7 +9,12 @@ $(document).ready(function() {
             <div id="aiko-chat-window" style="display: none;">
                 <div class="aiko-chat-header">
                     <h4>AIKO Assistant</h4>
-                    <button id="aiko-chat-close">&times;</button>
+                    <div class="aiko-chat-header-actions">
+                        <button id="aiko-chat-fullscreen" title="Toggle Fullscreen">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+                        </button>
+                        <button id="aiko-chat-close">&times;</button>
+                    </div>
                 </div>
                 <div class="aiko-chat-messages" id="aiko-chat-messages">
                     <div class="aiko-message assistant">
@@ -40,6 +45,15 @@ $(document).ready(function() {
 
     $('#aiko-chat-close').on('click', function() {
         $('#aiko-chat-window').hide();
+    });
+
+    $('#aiko-chat-fullscreen').on('click', function() {
+        $('#aiko-chat-window').toggleClass('fullscreen');
+        if ($('#aiko-chat-window').hasClass('fullscreen')) {
+            $(this).html('<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"></path></svg>');
+        } else {
+            $(this).html('<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>');
+        }
     });
 
     function appendMessage(role, text) {
