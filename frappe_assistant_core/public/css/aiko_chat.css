@@ -108,11 +108,6 @@
     align-self: flex-start;
 }
 
-.aiko-message.error .aiko-bubble {
-    background: #fee2e2;
-    color: #b91c1c;
-    border: 1px solid #fca5a5;
-}
 
 .aiko-bubble {
     padding: 12px 16px;
@@ -213,4 +208,201 @@
 @keyframes bounce {
     0%, 80%, 100% { transform: scale(0); }
     40% { transform: scale(1); }
+}
+
+/* ── Header action buttons ───────────────────────── */
+.aiko-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.aiko-header-actions button {
+    background: none;
+    border: none;
+    color: white;
+    opacity: 0.8;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    border-radius: 6px;
+    transition: opacity 0.2s, background 0.2s;
+}
+
+.aiko-header-actions button:hover {
+    opacity: 1;
+    background: rgba(255,255,255,0.15);
+}
+
+#aiko-chat-close {
+    font-size: 24px;
+    padding: 0 2px;
+}
+
+/* ── Sessions panel ──────────────────────────────── */
+.aiko-sessions-panel {
+    position: absolute;
+    top: 64px; /* below header */
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: white;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    border-radius: 0 0 20px 20px;
+    overflow: hidden;
+    animation: slideDown 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.aiko-sessions-panel.hidden {
+    display: none;
+}
+
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-10px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.aiko-sessions-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 18px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #374151;
+    border-bottom: 1px solid #f3f4f6;
+    background: #fafafa;
+}
+
+.aiko-sessions-header button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #6b7280;
+    display: flex;
+    align-items: center;
+    padding: 4px;
+    border-radius: 6px;
+    transition: background 0.2s, color 0.2s;
+}
+
+.aiko-sessions-header button:hover {
+    background: #f3f4f6;
+    color: #111827;
+}
+
+.aiko-sessions-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+}
+
+.aiko-sessions-loading {
+    padding: 24px;
+    text-align: center;
+    color: #9ca3af;
+    font-size: 13px;
+}
+
+.aiko-session-item {
+    padding: 12px 18px;
+    cursor: pointer;
+    border-bottom: 1px solid #f9fafb;
+    transition: background 0.15s;
+    position: relative;
+}
+
+.aiko-session-item:hover {
+    background: #f5f3ff;
+}
+
+.aiko-session-item.active {
+    background: #ede9fe;
+}
+
+.aiko-session-item.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: #6366f1;
+    border-radius: 0 2px 2px 0;
+}
+
+.aiko-session-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #111827;
+    margin-bottom: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.aiko-session-preview {
+    font-size: 12px;
+    color: #6b7280;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 2px;
+}
+
+.aiko-session-time {
+    font-size: 11px;
+    color: #9ca3af;
+}
+
+/* ── Load more button ────────────────────────────── */
+.aiko-load-more {
+    text-align: center;
+    padding: 8px 0 4px;
+}
+
+.aiko-load-more.hidden {
+    display: none;
+}
+
+.aiko-load-more button {
+    background: none;
+    border: 1px solid #e5e7eb;
+    border-radius: 20px;
+    padding: 6px 16px;
+    font-size: 12px;
+    color: #6366f1;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+}
+
+.aiko-load-more button:hover {
+    background: #f5f3ff;
+    border-color: #a5b4fc;
+}
+
+.aiko-load-more button:disabled {
+    color: #9ca3af;
+    cursor: default;
+}
+
+aiko-message.error {
+    display: flex;
+    justify-content: flex-start;   /* aligns left like assistant messages */
+    margin: 6px 12px;
+}
+ 
+.aiko-message.error .aiko-bubble {
+    background-color: #fff0f0;     /* light red background */
+    color: #c0392b;                /* dark red text */
+    border: 1px solid #f5c6c6;    /* subtle red border */
+    border-radius: 12px;
+    padding: 8px 12px;
+    font-size: 13px;
+    max-width: 85%;
+    word-wrap: break-word;
 }

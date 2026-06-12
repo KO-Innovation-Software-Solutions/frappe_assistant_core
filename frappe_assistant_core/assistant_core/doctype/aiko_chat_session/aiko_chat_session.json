@@ -1,0 +1,114 @@
+{
+ "actions": [],
+ "autoname": "field:thread_id",
+ "creation": "2024-01-01 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "thread_id",
+  "user",
+  "title",
+  "last_active",
+  "message_count",
+  "messages_section",
+  "conversation_html",
+  "messages_table_section",
+  "messages"
+ ],
+ "fields": [
+  {
+   "fieldname": "thread_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Thread ID",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "User",
+   "options": "User",
+   "reqd": 1
+  },
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title"
+  },
+  {
+   "fieldname": "last_active",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Last Active"
+  },
+  {
+   "fieldname": "message_count",
+   "fieldtype": "Int",
+   "label": "Message Count",
+   "default": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "messages_section",
+   "fieldtype": "Section Break",
+   "label": "Conversation View",
+   "collapsible": 0
+  },
+  {
+   "fieldname": "conversation_html",
+   "fieldtype": "HTML",
+   "label": "Conversation",
+   "options": "<div id=\"aiko-conversation-view\"><p style=\"color:#888;\">Loading conversation...</p></div>"
+  },
+  {
+   "fieldname": "messages_table_section",
+   "fieldtype": "Section Break",
+   "label": "Message Log (Raw Data)",
+   "collapsible": 1,
+   "collapsed": 1
+  },
+  {
+   "fieldname": "messages",
+   "fieldtype": "Table",
+   "label": "Messages",
+   "options": "Aiko Chat Session Message",
+   "read_only": 1,
+   "cannot_add_rows": 1,
+   "cannot_delete_rows": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-06-10 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Assistant Core",
+ "name": "Aiko Chat Session",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Assistant User",
+   "write": 1
+  }
+ ],
+ "sort_field": "last_active",
+ "sort_order": "DESC",
+ "track_changes": 0
+}
