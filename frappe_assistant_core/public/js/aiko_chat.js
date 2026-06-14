@@ -38,6 +38,12 @@ $(document).ready(function() {
                 <div class="aiko-chat-messages" id="aiko-chat-messages">
                     <!-- messages rendered here dynamically -->
                 </div>
+
+                <!-- Scroll to bottom / New message pill -->
+                <div id="aiko-scroll-btn" class="aiko-scroll-btn hidden">
+                    <span id="aiko-scroll-label">↓</span>
+                </div>
+
                 <div class="aiko-chat-input-area">
                     <input type="text" id="aiko-chat-input" placeholder="Ask something..." autocomplete="off" />
                     <button id="aiko-chat-send">
@@ -57,6 +63,33 @@ $(document).ready(function() {
     let hasMoreMessages = false;
     let isLoadingOlder = false;
     let hasAutoLoaded = false;
+    let isScrolledUp = false;   // tracks whether user has scrolled up
+
+    // ── SCROLL TRACKING + SCROLL-TO-BOTTOM BUTTON ─────────────────────────────
+    $('#aiko-chat-messages').on('scroll', function() {
+        const el = this;
+        const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+        isScrolledUp = distFromBottom > 80;
+        if (isScrolledUp) {
+            // Show the arrow button (without "New message" unless a new msg arrived)
+            $('#aiko-scroll-btn').removeClass('hidden');
+        } else {
+            // At bottom — hide button and clear any "New message" label
+            $('#aiko-scroll-btn').addClass('hidden');
+            $('#aiko-scroll-label').text('↓');
+            $('#aiko-scroll-btn').removeClass('aiko-scroll-btn-new');
+        }
+    });
+
+    $('#aiko-scroll-btn').on('click', function() {
+        scrollToBottom();
+    });
+
+    // ── HELPERS: timestamp ────────────────────────────────────────────────────
+    function formatTimestamp(dateStr) {
+        const date = dateStr ? new Date(dateStr.replace(' ', 'T')) : new Date();
+        return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    }
 
     // ── AUTO-LOAD LAST SESSION ON FIRST OPEN ──────────────────────────────────
     function autoLoadLastSession() {
@@ -65,11 +98,9 @@ $(document).ready(function() {
             method: 'frappe_assistant_core.api.assistant_api.get_chat_sessions',
             callback: function(r) {
                 if (r.message && r.message.success && r.message.sessions && r.message.sessions.length > 0) {
-                    // Load the most recent session automatically
                     const latest = r.message.sessions[0];
                     loadSession(latest.name, latest.thread_id);
                 } else {
-                    // No previous sessions — show fresh welcome
                     $('#aiko-chat-messages').html('');
                     appendMessage('assistant', 'Hello! I am AIKO, your AI assistant. How can I help you today?');
                 }
@@ -85,7 +116,6 @@ $(document).ready(function() {
     $('#aiko-chat-button').on('click', function() {
         $('#aiko-chat-window').toggle();
         if ($('#aiko-chat-window').is(':visible')) {
-            // Auto-load last session only once per page load
             if (!hasAutoLoaded) {
                 hasAutoLoaded = true;
                 autoLoadLastSession();
@@ -118,7 +148,9 @@ $(document).ready(function() {
         currentSessionName = null;
         oldestMessageCreation = null;
         hasMoreMessages = false;
+        isScrolledUp = false;
         $('#aiko-chat-messages').html('');
+        $('#aiko-scroll-btn').addClass('hidden');
         appendMessage('assistant', 'Hello! I am AIKO, your AI assistant. How can I help you today?');
         hideSessionsPanel();
         $('#aiko-chat-input').focus();
@@ -127,11 +159,8 @@ $(document).ready(function() {
     // ── HISTORY PANEL ─────────────────────────────────────────────────────────
     $('#aiko-history-btn').on('click', function() {
         const panel = $('#aiko-sessions-panel');
-        if (panel.hasClass('hidden')) {
-            showSessionsPanel();
-        } else {
-            hideSessionsPanel();
-        }
+        if (panel.hasClass('hidden')) showSessionsPanel();
+        else hideSessionsPanel();
     });
 
     $('#aiko-sessions-close').on('click', function() {
@@ -195,6 +224,8 @@ $(document).ready(function() {
         thread_id = sessionThreadId;
         oldestMessageCreation = null;
         hasMoreMessages = false;
+        isScrolledUp = false;
+        $('#aiko-scroll-btn').addClass('hidden');
 
         $('#aiko-chat-messages').html('<div class="aiko-sessions-loading" id="aiko-msg-loading">Loading messages...</div>');
 
@@ -209,7 +240,6 @@ $(document).ready(function() {
                     const msgs = r.message.messages;
                     hasMoreMessages = r.message.has_more || false;
 
-                    // Show "Load older" button at top if more messages exist
                     if (hasMoreMessages) {
                         $('#aiko-chat-messages').prepend(`
                             <div id="aiko-load-more" class="aiko-load-more">
@@ -222,7 +252,7 @@ $(document).ready(function() {
                     if (msgs.length === 0) {
                         appendMessage('assistant', 'Hello! I am AIKO, your AI assistant. How can I help you today?');
                     } else {
-                        msgs.forEach(function(m) { appendMessage(m.role, m.content, false); });
+                        msgs.forEach(function(m) { appendMessage(m.role, m.content, false, m.creation); });
                         oldestMessageCreation = msgs[0].creation;
                         scrollToBottom();
                     }
@@ -263,20 +293,15 @@ $(document).ready(function() {
                     hasMoreMessages = r.message.has_more || false;
 
                     if (msgs.length > 0) {
-                        // Preserve scroll position while inserting older messages above
                         const container = $('#aiko-chat-messages')[0];
                         const prevScrollHeight = container.scrollHeight;
-
                         msgs.forEach(function(m) {
-                            $('#aiko-load-more').after(buildMessageHtml(m.role, m.content));
+                            $('#aiko-load-more').after(buildMessageHtml(m.role, m.content, m.creation));
                         });
-
-                        // Keep user at the same visual position
                         container.scrollTop = container.scrollHeight - prevScrollHeight;
                         oldestMessageCreation = msgs[0].creation;
                     }
 
-                    // Hide button if no more messages left
                     if (!hasMoreMessages) {
                         $('#aiko-load-more').remove();
                     }
@@ -290,25 +315,46 @@ $(document).ready(function() {
     }
 
     // ── MESSAGING ─────────────────────────────────────────────────────────────
-    function buildMessageHtml(role, text) {
+    function buildMessageHtml(role, text, creation) {
         let content = text;
         if (frappe.markdown) content = frappe.markdown(text);
-        return `<div class="aiko-message ${role}"><div class="aiko-bubble">${content}</div></div>`;
+        const time = formatTimestamp(creation);
+        return `
+            <div class="aiko-message ${role}">
+                <div class="aiko-bubble">
+                    ${content}
+                    <div class="aiko-timestamp">${time}</div>
+                </div>
+            </div>`;
     }
 
-    function appendMessage(role, text, doScroll) {
+    function appendMessage(role, text, doScroll, creation) {
         if (doScroll === undefined) doScroll = true;
-        $('#aiko-chat-messages').append(buildMessageHtml(role, text));
-        if (doScroll) scrollToBottom();
+        $('#aiko-chat-messages').append(buildMessageHtml(role, text, creation));
+
+        if (doScroll) {
+            if (isScrolledUp) {
+                // User is scrolled up — show "New message ↓" pill instead of forcing scroll
+                $('#aiko-scroll-label').text('New message ↓');
+                $('#aiko-scroll-btn').removeClass('hidden').addClass('aiko-scroll-btn-new');
+            } else {
+                scrollToBottom();
+            }
+        }
     }
 
     function scrollToBottom() {
         const el = $('#aiko-chat-messages')[0];
         el.scrollTop = el.scrollHeight;
+        isScrolledUp = false;
+        $('#aiko-scroll-btn').addClass('hidden');
+        $('#aiko-scroll-label').text('↓');
+        $('#aiko-scroll-btn').removeClass('aiko-scroll-btn-new');
     }
 
     function showThinking() {
         isThinking = true;
+        $('#aiko-chat-send').prop('disabled', true).css({ 'background': '#c4b5fd', 'cursor': 'not-allowed' });
         $('#aiko-chat-messages').append(`
             <div class="aiko-message assistant" id="aiko-thinking">
                 <div class="aiko-bubble thinking-bubble">
@@ -322,6 +368,7 @@ $(document).ready(function() {
     function removeThinking() {
         isThinking = false;
         $('#aiko-thinking').remove();
+        $('#aiko-chat-send').prop('disabled', false).css({ 'background': '#6366f1', 'cursor': 'pointer' });
     }
 
     function sendMessage() {
