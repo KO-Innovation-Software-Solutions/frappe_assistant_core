@@ -150,7 +150,7 @@ class BaseAssistantTest(unittest.TestCase):
                     {
                         "doctype": "Assistant Core Settings",
                         "server_enabled": 0,
-                        "enabled_plugins_list": json.dumps(["core"]),
+                        "enabled_plugins_list": json.dumps(["core","Telematics"]),
                     }
                 )
                 doc.insert(ignore_permissions=True)

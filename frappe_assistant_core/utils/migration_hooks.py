@@ -868,7 +868,7 @@ def _sync_plugin_configurations():
             config.plugin_name = plugin_name
             config.display_name = plugin_info.display_name
             config.description = plugin_info.description
-            config.enabled = is_enabled
+            config.enabled = 1
             config.discovered_at = frappe.utils.now()
 
             config.flags.ignore_permissions = True
