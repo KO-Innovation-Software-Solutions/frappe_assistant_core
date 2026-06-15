@@ -40,7 +40,7 @@ def execute():
             message=str(e),
         )
         # Default to core if we can't read existing settings
-        enabled_list = ["core"]
+        enabled_list = ["core","telematics"]
 
     # 2. Get all discovered plugins
     discovered_plugins = {}

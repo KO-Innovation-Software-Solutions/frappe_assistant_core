@@ -15,7 +15,7 @@ class TraccarPlugin(BasePlugin):
 
 	def get_info(self):
 		return {
-			"name": "traccar",
+			"name": "telematics",
 			"display_name": "Fleet IoT Telematics (Traccar)",
 			"description": (
 				"Provides live and historical vehicle telematics via Traccar: "

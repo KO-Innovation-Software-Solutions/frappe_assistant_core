@@ -6,7 +6,7 @@ from typing import Any, Dict
 
 import frappe
 from frappe_assistant_core.core.base_tool import BaseTool
-from frappe_assistant_core.plugins.traccar.traccar_client import TraccarClient, resolve_device_id
+from frappe_assistant_core.plugins.telematics.traccar_client import TraccarClient, resolve_device_id
 
 
 class GetVehiclePosition(BaseTool):
@@ -48,6 +48,15 @@ class GetVehiclePosition(BaseTool):
 
 			latest = positions[-1]
 			attrs = latest.get("attributes", {})
+			address = latest.get("address")
+			frappe.logger().info(
+				f"Reverse geocode: {latest.get('latitude')}, {latest.get('longitude')}"
+			)
+			if not address:
+				address = client.reverse_geocode(
+					latest.get("latitude"),
+					latest.get("longitude")
+				)
 
 			return {
 				"success": True,
@@ -57,7 +66,7 @@ class GetVehiclePosition(BaseTool):
 				"longitude": latest.get("longitude"),
 				"speed_kmh": round(latest.get("speed", 0) * 1.852, 2),
 				"course": latest.get("course"),
-				"address": latest.get("address"),
+				"address": address,
 				"fix_time": latest.get("fixTime"),
 				"server_time": latest.get("serverTime"),
 				"ignition": attrs.get("ignition"),

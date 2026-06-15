@@ -6,7 +6,7 @@ from typing import Any, Dict
 
 import frappe
 from frappe_assistant_core.core.base_tool import BaseTool
-from frappe_assistant_core.plugins.traccar.traccar_client import TraccarClient, resolve_device_id
+from frappe_assistant_core.plugins.telematics.traccar_client import TraccarClient, resolve_device_id
 
 
 class GetVehicleTrips(BaseTool):

@@ -2,7 +2,6 @@
 Shared Traccar HTTP client for Fleet IoT telematics.
 Reads credentials from Fleet IoT Settings doctype.
 """
-
 import requests
 import frappe
 
@@ -10,7 +9,6 @@ import frappe
 class TraccarClient:
 	def __init__(self):
 		settings = frappe.get_single("Fleet IoT Settings")
-
 		self.username = settings.telematics_username
 		self.password = settings.get_password("telematics_password")
 		self.base_url = settings.telematics_base_url.rstrip("/")
@@ -19,19 +17,15 @@ class TraccarClient:
 			frappe.throw("Telematics credentials not configured in Fleet IoT Settings")
 
 		self.session = requests.Session()
-
 		login_res = self.session.post(
 			f"{self.base_url}/api/session",
 			data={"email": self.username, "password": self.password},
 			timeout=15,
 		)
-
 		if login_res.status_code != 200:
 			frappe.throw(f"Traccar login failed: {login_res.status_code} - {login_res.text}")
 
-		self.session.headers.update({
-			"Accept": "application/json",
-		})
+		self.session.headers.update({"Accept": "application/json"})
 
 	@staticmethod
 	def _int(val):
@@ -121,12 +115,10 @@ class TraccarClient:
 		return res.json()
 
 	def get_geofences(self, device_id=None):
-		all_geofences = []
 		res = self.session.get(f"{self.base_url}/api/geofences", timeout=15)
 		if res.status_code != 200:
 			frappe.throw(f"Geofences fetch failed: {res.status_code} - {res.text}")
 		all_geofences = res.json()
-
 		if device_id:
 			try:
 				res2 = self.session.get(
@@ -141,17 +133,55 @@ class TraccarClient:
 							all_geofences.append(g)
 			except Exception:
 				pass
-
 		return all_geofences
+
+	def get_all_devices(self):
+		res = self.session.get(f"{self.base_url}/api/devices", timeout=15)
+		if res.status_code != 200:
+			frappe.throw(f"Devices fetch failed: {res.status_code}")
+		return res.json()
+
+	def get_all_positions(self):
+		res = self.session.get(f"{self.base_url}/api/positions", timeout=30)
+		if res.status_code != 200:
+			frappe.throw(f"All positions fetch failed: {res.status_code}")
+		return res.json()
+
+	def get_all_summary(self, from_date, to_date):
+		res = self.session.get(
+			f"{self.base_url}/api/reports/summary",
+			params={"from": from_date, "to": to_date},
+			timeout=60,
+		)
+		if res.status_code != 200:
+			return []
+		return res.json()
+
+	def reverse_geocode(self, lat, lng):
+		try:
+			settings = frappe.get_single("Fleet IoT Settings")
+			api_key = "AIzaSyCekFmfkQ1yePDmE2otyma_ASuw-z_HGyo"
+			if not api_key:
+				return None
+			url = f"https://maps.googleapis.com/maps/api/geocode/json?latlng={lat},{lng}&key={api_key}"
+			res = requests.get(url, timeout=10)
+			data = res.json()
+			if data.get("status") == "OK" and data.get("results"):
+				return data["results"][0]["formatted_address"]
+			return None
+		except Exception:
+			return None
 
 
 def resolve_device_id(vehicle: str) -> int:
-    client = TraccarClient()
-    vehicle_clean = vehicle.replace(" ", "").upper()
-    res = client.session.get(f"{client.base_url}/api/devices", timeout=15)
-    if res.status_code == 200:
-        for d in res.json():
-            if (d.get("name", "").replace(" ", "").upper() == vehicle_clean or
-                d.get("uniqueId", "").replace(" ", "").upper() == vehicle_clean):
-                return int(d["id"])
-    frappe.throw(f"Could not resolve Traccar device ID for vehicle: {vehicle}")
+	client = TraccarClient()
+	vehicle_clean = vehicle.replace(" ", "").upper()
+	res = client.session.get(f"{client.base_url}/api/devices", timeout=15)
+	if res.status_code == 200:
+		for d in res.json():
+			if (
+				d.get("name", "").replace(" ", "").upper() == vehicle_clean
+				or d.get("uniqueId", "").replace(" ", "").upper() == vehicle_clean
+			):
+				return int(d["id"])
+	frappe.throw(f"Could not resolve Traccar device ID for vehicle: {vehicle}")
