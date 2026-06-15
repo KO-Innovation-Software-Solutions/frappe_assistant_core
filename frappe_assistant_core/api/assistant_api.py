@@ -226,6 +226,94 @@ def _authenticate_request() -> Optional[str]:
     return None
 
 
+@frappe.whitelist(methods=["GET", "POST"])
+def get_chat_sessions() -> Dict[str, Any]:
+    """Get all chat sessions for the current user, with last message preview (WhatsApp style)"""
+    try:
+        authenticated_user = _authenticate_request()
+        if not authenticated_user:
+            frappe.throw(_("Authentication required"))
+
+        # Fetch sessions for this user, newest first
+        sessions = frappe.db.get_list(
+            "Aiko Chat Session",
+            filters={"user": authenticated_user},
+            fields=["name", "thread_id", "title", "last_active", "message_count"],
+            order_by="last_active desc",
+            limit=50,
+        )
+
+        # For each session, get the last message as preview
+        for session in sessions:
+            last_msg = frappe.db.get_list(
+                "Aiko Chat Message",
+                filters={"session": session["name"]},
+                fields=["role", "content", "creation"],
+                order_by="creation desc",
+                limit=1,
+            )
+            if last_msg:
+                session["preview"] = last_msg[0]["content"][:80]
+                session["preview_role"] = last_msg[0]["role"]
+                session["preview_time"] = last_msg[0]["creation"]
+            else:
+                session["preview"] = "No messages yet"
+                session["preview_role"] = ""
+                session["preview_time"] = session["last_active"]
+
+        return {"success": True, "sessions": sessions}
+
+    except Exception as e:
+        api_logger.error(f"Error getting chat sessions: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@frappe.whitelist(methods=["GET", "POST"])
+def get_session_messages(session_name: str, limit: int = 20, before_creation: str = None) -> Dict[str, Any]:
+    """
+    Get messages for a session with pagination.
+    Returns last `limit` messages, or messages older than `before_creation` for scroll-up loading.
+    """
+    try:
+        authenticated_user = _authenticate_request()
+        if not authenticated_user:
+            frappe.throw(_("Authentication required"))
+
+        # Verify session belongs to this user
+        session_user = frappe.db.get_value("Aiko Chat Session", session_name, "user")
+        if session_user != authenticated_user:
+            frappe.throw(_("Access denied"))
+
+        filters = {"session": session_name}
+        if before_creation:
+            filters["creation"] = ("<", before_creation)
+
+        messages = frappe.db.get_list(
+            "Aiko Chat Message",
+            filters=filters,
+            fields=["name", "role", "content", "creation"],
+            order_by="creation desc",
+            limit=int(limit) + 1,  # fetch one extra to know if there are more
+        )
+
+        has_more = len(messages) > int(limit)
+        if has_more:
+            messages = messages[:int(limit)]
+
+        # Reverse so oldest is first (chronological order for display)
+        messages.reverse()
+
+        return {
+            "success": True,
+            "messages": messages,
+            "has_more": has_more,
+        }
+
+    except Exception as e:
+        api_logger.error(f"Error getting session messages: {e}")
+        return {"success": False, "error": str(e)}
+
+
 def _check_assistant_enabled(user: str) -> bool:
     """
     Check if the assistant_enabled field is enabled for the user.
