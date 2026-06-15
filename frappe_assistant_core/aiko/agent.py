@@ -36,7 +36,31 @@ class AikoAgent:
                 ),
             }
         ]
+        self._load_history()
 
+    def _load_history(self):
+        session_name = frappe.db.get_value(
+            "Aiko Chat Session", {"thread_id": self.thread_id}, "name"
+        )
+        if not session_name:
+            return
+        past_messages = frappe.db.get_list(
+            "Aiko Chat Message",
+            filters={
+                "session": session_name,
+                "role": ["in", ["user", "assistant"]],
+            },
+            fields=["role", "content"],
+            order_by="creation asc",
+            limit=MAX_HISTORY_MESSAGES,
+        )
+
+        for msg in past_messages:
+            self.messages.append({
+                "role": msg["role"],
+                "content": msg["content"],
+            })
+            
     def _trim_history(self):
         if len(self.messages) > MAX_HISTORY_MESSAGES:
             system_prompt = self.messages[0]
@@ -111,4 +135,3 @@ class AikoAgent:
         Returns a dict: {content, input_tokens, output_tokens}
         """
         return asyncio.run(self._process_query(message))
-        
