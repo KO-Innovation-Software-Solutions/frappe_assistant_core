@@ -278,9 +278,14 @@ fixtures = [
 
 # Tool discovery from external apps via hooks
 assistant_tools = [
-    # Core tools are discovered automatically from plugins
+    "frappe_assistant_core.services.traccar_tools.GetVehiclePositionTool",
+    "frappe_assistant_core.services.traccar_tools.GetVehicleTripsTool",
+    "frappe_assistant_core.services.traccar_tools.GetVehicleStopsTool",
+    "frappe_assistant_core.services.traccar_tools.GetVehicleRouteTool",
+    "frappe_assistant_core.services.traccar_tools.GetVehicleEventsTool",
+    "frappe_assistant_core.services.traccar_tools.GetVehicleSummaryTool",
+    "frappe_assistant_core.services.traccar_tools.GetGeofencesTool",
 ]
-
 # Tool configuration overrides
 assistant_tool_configs = {
     # Example tool config:
