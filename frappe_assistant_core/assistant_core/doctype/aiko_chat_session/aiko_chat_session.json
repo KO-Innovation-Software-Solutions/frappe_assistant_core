@@ -11,6 +11,7 @@
   "title",
   "last_active",
   "message_count",
+  "total_tokens",
   "messages_section",
   "conversation_html",
   "messages_table_section",
@@ -75,10 +76,17 @@
    "label": "Messages",
    "options": "Aiko Chat Session Message",
    "read_only": 1
+  },
+  {
+   "fieldname": "total_tokens",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Total Tokens",
+   "read_only": 1
   }
  ],
  "links": [],
- "modified": "2026-06-14 14:12:47.575847",
+ "modified": "2026-06-16 16:12:25.419584",
  "modified_by": "Administrator",
  "module": "Assistant Core",
  "name": "Aiko Chat Session",

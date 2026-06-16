@@ -3,6 +3,20 @@ from frappe import _
 from frappe.utils import now_datetime
 from frappe_assistant_core.aiko.agent import AikoAgent
 
+def _get_active_llm_info(settings=None):
+    """Return (provider, model) currently configured in Assistant Core Settings -> AIKO LLM tab."""
+    settings = settings or frappe.get_single("Assistant Core Settings")
+    provider = (settings.get("llm_provider") or "anthropic").lower()
+
+    if provider == "openai":
+        model = settings.get("openai_model")
+    elif provider == "ollama":
+        model = settings.get("ollama_chat_model")
+    else:  # anthropic (default)
+        model = settings.get("anthropic_model")
+
+    return provider, model
+
 
 def _get_or_create_session(thread_id: str, user: str):
     existing_name = frappe.db.get_value("Aiko Chat Session", {"thread_id": thread_id}, "name")
@@ -27,9 +41,7 @@ def _get_or_create_session(thread_id: str, user: str):
     return session
 
 
-def _save_message(session_id: str, role: str, content: str,
-                  input_tokens: int = 0, output_tokens: int = 0):
-    """Insert a single chat message record."""
+def _save_message(session_id: str, role: str, content: str,input_tokens: int = 0, output_tokens: int = 0,llm_provider: str = None, llm_model: str = None):
     total = input_tokens + output_tokens
     msg = frappe.get_doc({
         "doctype": "Aiko Chat Message",
@@ -39,6 +51,8 @@ def _save_message(session_id: str, role: str, content: str,
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
         "total_tokens": total,
+        "llm_provider": llm_provider,
+        "llm_model": llm_model,
     })
     msg.insert(ignore_permissions=True)
     return msg
@@ -59,17 +73,14 @@ def _update_session_meta(session, delta_messages: int = 1):
 
 @frappe.whitelist()
 def chat(message: str, thread_id: str):
-    """
-    Main endpoint for AIKO chat.
-    Saves the session and each message (user + assistant) with token usage.
-    Returns session_name so the frontend can track the session.
-    """
     if not frappe.session.user or frappe.session.user == "Guest":
         frappe.throw(_("Authentication required"))
 
     user = frappe.session.user
 
     try:
+        settings = frappe.get_single("Assistant Core Settings")
+        provider, model = _get_active_llm_info(settings)
         session = _get_or_create_session(thread_id, user)
         agent = AikoAgent(thread_id=thread_id)
         result = agent.invoke(message)
@@ -77,13 +88,21 @@ def chat(message: str, thread_id: str):
         response_text = result.get("content", "")
         input_tokens = result.get("input_tokens", 0)
         output_tokens = result.get("output_tokens", 0)
-        _save_message(session.name, role="user", content=message)
+        _save_message(
+            session.name,
+            role="user",
+            content=message,
+            llm_provider=provider,
+            llm_model=model,
+        )
         _save_message(
             session.name,
             role="assistant",
             content=response_text,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            llm_provider=provider,
+            llm_model=model,
         )
         _update_session_meta(session, delta_messages=2)
 
