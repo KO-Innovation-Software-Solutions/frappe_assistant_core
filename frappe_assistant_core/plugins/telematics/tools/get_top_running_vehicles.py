@@ -37,7 +37,7 @@ class GetTopRunningVehicles(BaseTool):
 		sort_by   = arguments.get("sort_by", "distance")
 		try:
 			client  = TraccarClient()
-			devices = client.get_devices()
+			devices = client.get_all_devices()
 			results = []
 
 			for d in devices:

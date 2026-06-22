@@ -36,20 +36,31 @@ class GetVehicleLiveStatus(BaseTool):
 		try:
 			device_id = resolve_device_id(vehicle)
 			client = TraccarClient()
-			positions = client.get_positions(device_id=device_id)
-			devices = client.get_devices()
-			device = next((d for d in devices if d.get("id") == device_id), {})
 
-			position = positions[0] if positions else {}
+			positions = client.get_positions(device_id=device_id)
+
+			devices = client.get_all_devices()
+
+			device = next(
+				(d for d in devices if d.get("id") == device_id),
+				{}
+			)
+
+			position = positions[-1] if positions else {}
+
+			attrs = position.get("attributes", {})
+
 			speed = position.get("speed", 0)
-			ignition = position.get("attributes", {}).get("ignition", False)
+			ignition = attrs.get("ignition", False)
+			motion = attrs.get("motion", False)
+
 			device_status = device.get("status", "unknown")
 
 			if device_status == "offline":
 				status = "Offline"
-			elif ignition and speed > 1:
+			elif motion:
 				status = "Running"
-			elif ignition and speed <= 1:
+			elif ignition:
 				status = "Idle"
 			else:
 				status = "Parked"

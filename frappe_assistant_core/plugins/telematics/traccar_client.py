@@ -135,6 +135,39 @@ class TraccarClient:
 				pass
 		return all_geofences
 
+	
+	def create_or_update_geofence(self, name, latitude, longitude, radius=100):
+		# Fetch geofences
+		res = self.session.get(f"{self.base_url}/api/geofences", timeout=15)
+
+		if res.status_code != 200:
+			frappe.throw(f"Fetch geofences failed: {res.status_code} - {res.text}")
+
+		geofences = res.json()
+
+		# Check existing
+		for geo in geofences:
+			if geo.get("name") == name:
+				return geo.get("id")
+
+		# Create new
+		payload = {
+			"name": name,
+			"area": f"CIRCLE ({latitude} {longitude}, {radius})"
+		}
+
+		res = self.session.post(
+			f"{self.base_url}/api/geofences",
+			json=payload,
+			timeout=15
+		)
+
+		if res.status_code not in (200, 201):
+			frappe.throw(f"Create geofence failed: {res.status_code} - {res.text}")
+
+		return res.json().get("id")
+
+
 	def get_all_devices(self):
 		res = self.session.get(f"{self.base_url}/api/devices", timeout=15)
 		if res.status_code != 200:
@@ -174,14 +207,11 @@ class TraccarClient:
 
 
 def resolve_device_id(vehicle: str) -> int:
-	client = TraccarClient()
-	vehicle_clean = vehicle.replace(" ", "").upper()
-	res = client.session.get(f"{client.base_url}/api/devices", timeout=15)
-	if res.status_code == 200:
-		for d in res.json():
-			if (
-				d.get("name", "").replace(" ", "").upper() == vehicle_clean
-				or d.get("uniqueId", "").replace(" ", "").upper() == vehicle_clean
-			):
-				return int(d["id"])
-	frappe.throw(f"Could not resolve Traccar device ID for vehicle: {vehicle}")
+	vehicle_doc = frappe.get_doc("Vehicle", vehicle)
+
+	if not vehicle_doc.telematics_id:
+		frappe.throw(
+			f"No telematics_id configured for vehicle: {vehicle}"
+		)
+
+	return int(vehicle_doc.telematics_id)

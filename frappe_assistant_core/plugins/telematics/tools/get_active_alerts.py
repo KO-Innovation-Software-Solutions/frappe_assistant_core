@@ -37,7 +37,7 @@ class GetActiveAlerts(BaseTool):
 		types     = arguments.get("event_types")
 		try:
 			client    = TraccarClient()
-			devices   = client.get_devices()
+			devices   = client.get_all_devices()
 			now       = datetime.now(timezone.utc)
 			from_date = (now - timedelta(minutes=lookback)).strftime("%Y-%m-%dT%H:%M:%SZ")
 			to_date   = now.strftime("%Y-%m-%dT%H:%M:%SZ")

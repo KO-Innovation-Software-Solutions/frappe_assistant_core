@@ -24,17 +24,27 @@ class GetOfflineVehicles(BaseTool):
 			"type": "object",
 			"properties": {
 				"offline_minutes": {"type": "integer", "description": "Minutes without update to consider offline (default: 60)"},
-				"group_id":        {"type": "integer", "description": "Optional group ID to filter"},
 			},
 			"required": [],
 		}
 
 	def execute(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
 		offline_minutes = arguments.get("offline_minutes", 60)
-		group_id        = arguments.get("group_id")
 		try:
-			client    = TraccarClient()
-			devices   = client.get_devices(group_id=group_id)
+			# Get only Frappe-registered vehicles
+			frappe_vehicles = {
+				v["name"].replace(" ", "").upper()
+				for v in frappe.get_all("Vehicle", fields=["name"], ignore_permissions=True)
+			}
+			client  = TraccarClient()
+			devices = client.get_all_devices()
+
+			# Filter only Frappe vehicles
+			devices = [
+				d for d in devices
+				if d.get("name", "").replace(" ", "").upper() in frappe_vehicles
+			]
+
 			now       = datetime.now(timezone.utc)
 			threshold = now - timedelta(minutes=offline_minutes)
 			offline   = []
@@ -55,10 +65,10 @@ class GetOfflineVehicles(BaseTool):
 			offline.sort(key=lambda x: x.get("minutes_offline") or 999999, reverse=True)
 
 			return {
-				"success":         True,
-				"offline_count":   len(offline),
-				"threshold_mins":  offline_minutes,
-				"vehicles":        offline,
+				"success":        True,
+				"offline_count":  len(offline),
+				"threshold_mins": offline_minutes,
+				"vehicles":       offline,
 			}
 		except Exception as e:
 			frappe.log_error(str(e), "GetOfflineVehicles.execute")

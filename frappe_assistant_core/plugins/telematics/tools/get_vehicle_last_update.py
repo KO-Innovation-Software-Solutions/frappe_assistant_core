@@ -36,14 +36,14 @@ class GetVehicleLastUpdate(BaseTool):
 		try:
 			device_id = resolve_device_id(vehicle)
 			client    = TraccarClient()
-			devices   = client.get_devices()
+			devices   = client.get_all_devices()
 			device    = next((d for d in devices if d.get("id") == device_id), None)
 
 			if not device:
 				return {"success": False, "vehicle": vehicle, "error": "Device not found"}
 
 			positions = client.get_positions(device_id=device_id)
-			position  = positions[0] if positions else {}
+			position  = positions[-1] if positions else {}  # ✅ latest position
 
 			return {
 				"success":          True,
