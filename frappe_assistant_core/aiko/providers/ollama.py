@@ -1,6 +1,44 @@
 import json
 from openai import OpenAI
 
+# Ollama's OpenAI-compatible endpoint silently caps the context window at
+# 2048 tokens unless you pass `num_ctx` via extra_body. Below that, a long
+# OCR/extraction result gets silently truncated and the model can come back
+# with an empty completion. 8192 is a safer default for invoice/document
+# style payloads; override with `ollama_context_window` in settings if needed.
+DEFAULT_CONTEXT_WINDOW = 8192
+MAX_TOOL_ITERATIONS = 8
+# Cap how much raw tool output we feed back into the model in one go, so a
+# huge extracted document doesn't blow the context window by itself.
+MAX_TOOL_RESULT_CHARS = 12000
+
+
+def _stringify_tool_content(content) -> str:
+    """Pull clean text out of an MCP CallToolResult.content list.
+
+    `content` is normally a list of TextContent (and similar) Pydantic
+    objects. Calling str() on those returns their repr
+    (`type='text' text='...' annotations=None`), which roughly triples the
+    token count and confuses smaller models with stray quotes/field names.
+    We extract `.text` when present and only fall back to str() for content
+    types that don't have it (e.g. embedded images/resources).
+    """
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            text = getattr(item, "text", None)
+            parts.append(text if text is not None else str(item))
+        return "\n".join(parts)
+    return str(content)
+
+
+def _truncate_tool_result(text: str, limit: int = MAX_TOOL_RESULT_CHARS) -> str:
+    if len(text) <= limit:
+        return text
+    omitted = len(text) - limit
+    return f"{text[:limit]}\n\n[...truncated, {omitted} more characters omitted to fit the model's context window...]"
+
+
 class OllamaProvider:
     def __init__(self, settings):
         self.settings = settings
@@ -9,8 +47,10 @@ class OllamaProvider:
         if not base_url.endswith("/v1"):
             base_url = f"{base_url.rstrip('/')}/v1"
         self.model = self.settings.get("ollama_chat_model") or "llama3.1"
+        self.context_window = int(self.settings.get("ollama_context_window") or DEFAULT_CONTEXT_WINDOW)
         self.openai = OpenAI(api_key=api_key, base_url=base_url)
-    async def process_query(self, query: str, session, messages: list) -> tuple:
+
+    async def _get_tools(self, session) -> list:
         tools = []
         if session:
             response = await session.list_tools()
@@ -23,27 +63,53 @@ class OllamaProvider:
                         "parameters": tool.inputSchema,
                     },
                 })
-        messages.append({"role": "user", "content": query})
+        return tools
+
+    async def _run_loop(self, session, messages: list, tools: list) -> tuple:
+        """Core agentic loop shared by both entry points."""
         total_input_tokens = 0
         total_output_tokens = 0
-        while True:
+        last_tool_result_text = None  # raw text from the most recent tool call
+
+        for _ in range(MAX_TOOL_ITERATIONS):
             response = self.openai.chat.completions.create(
                 model=self.model,
                 messages=messages,
                 tools=tools if tools else None,
+                max_tokens=2048,
+                # Ollama ignores unknown OpenAI fields but DOES respect this
+                # passthrough for its own /api options — without it, context
+                # silently caps at 2048 tokens regardless of the model's
+                # real window, which truncates long extraction results.
+                extra_body={"options": {"num_ctx": self.context_window}},
             )
             if response.usage:
                 total_input_tokens += response.usage.prompt_tokens or 0
                 total_output_tokens += response.usage.completion_tokens or 0
+
             assistant_message = response.choices[0].message
+
             if not assistant_message.tool_calls:
                 final_answer = assistant_message.content or ""
+
+                if not final_answer and last_tool_result_text:
+                    # The model produced nothing (often a context-overflow or
+                    # small-model failure mode) but we DO have the real
+                    # extracted content from the last tool call. Surface that
+                    # directly instead of a useless apology.
+                    final_answer = (
+                        "Here is the extracted file content (the model didn't "
+                        "add commentary, so showing the raw extraction):\n\n"
+                        f"{last_tool_result_text}"
+                    )
+
                 messages.append({"role": "assistant", "content": final_answer})
                 usage = {
                     "input_tokens": total_input_tokens,
                     "output_tokens": total_output_tokens,
                 }
                 return final_answer, messages, usage
+
             messages.append({
                 "role": "assistant",
                 "content": assistant_message.content or "",
@@ -59,6 +125,7 @@ class OllamaProvider:
                     for tc in assistant_message.tool_calls
                 ],
             })
+
             for tool_call in assistant_message.tool_calls:
                 tool_name = tool_call.function.name
                 try:
@@ -68,16 +135,40 @@ class OllamaProvider:
                 try:
                     if session:
                         result = await session.call_tool(tool_name, tool_args)
-                        if isinstance(result.content, list):
-                            tool_result = "\n".join(str(item) for item in result.content)
-                        else:
-                            tool_result = str(result.content)
+                        tool_result = _stringify_tool_content(result.content)
                     else:
                         tool_result = "No session available."
                 except Exception as e:
                     tool_result = f"Error calling tool: {e}"
+
+                last_tool_result_text = tool_result
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
-                    "content": tool_result,
+                    "content": _truncate_tool_result(tool_result),
                 })
+
+        # Hit the iteration cap without the model producing a final answer.
+        # Surface the last extraction we have rather than going silent.
+        final_answer = ""
+        if last_tool_result_text:
+            final_answer = (
+                "Reached the tool-call limit before the model wrapped up, "
+                "so here is the most recent extracted content:\n\n"
+                f"{last_tool_result_text}"
+            )
+        messages.append({"role": "assistant", "content": final_answer})
+        usage = {"input_tokens": total_input_tokens, "output_tokens": total_output_tokens}
+        return final_answer, messages, usage
+
+    async def process_query(self, query: str, session, messages: list) -> tuple:
+        """Entry point for plain text queries."""
+        tools = await self._get_tools(session)
+        messages.append({"role": "user", "content": query})
+        return await self._run_loop(session, messages, tools)
+
+    async def process_query_with_messages(self, session, messages: list) -> tuple:
+        """Entry point for pre-built message lists (e.g. multimodal/file queries).
+        The caller is responsible for appending the user message before calling this."""
+        tools = await self._get_tools(session)
+        return await self._run_loop(session, messages, tools)

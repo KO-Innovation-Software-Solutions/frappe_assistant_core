@@ -28,12 +28,21 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 from typing import Any, Dict, Optional
 
 import frappe
 from frappe import _
 
 from frappe_assistant_core.core.base_tool import BaseTool
+
+# Cache for cross-interpreter PaddleOCR availability checks, keyed by
+# python interpreter path -> (is_available, checked_at_epoch_seconds).
+# When PaddleOCR lives in a separate venv (a different Python than the one
+# running Frappe), checking availability means spawning that interpreter,
+# so we avoid doing it on every single extraction call.
+_PADDLE_AVAILABILITY_CACHE: Dict[str, tuple] = {}
+_PADDLE_AVAILABILITY_TTL_SECONDS = 300
 
 
 class ExtractFileContent(BaseTool):
@@ -181,7 +190,24 @@ class ExtractFileContent(BaseTool):
         """Check if required dependencies are available"""
         missing_deps = []
 
-        # Check required libraries
+        # Determine which backend is configured so we can skip irrelevant checks
+        try:
+            ocr_settings = self._get_ocr_settings()
+            ocr_backend = ocr_settings.get("backend", "paddleocr")
+        except Exception:
+            ocr_backend = "paddleocr"
+
+        # NOTE: these used to be skipped when ocr_backend == "ollama", on the
+        # assumption that Ollama handles everything itself. That's wrong:
+        # _perform_ocr() falls back from Ollama -> PaddleOCR -> Tesseract
+        # whenever Ollama fails or returns empty text, and BOTH fallbacks
+        # need pypdf/Pillow/pytesseract/fitz. Skipping the check meant a
+        # missing dependency wasn't caught here — it instead surfaced deep
+        # inside the fallback chain, got swallowed by a broad try/except in
+        # _try_ollama_ocr(), and the user just saw a generic empty result
+        # with no indication anything was actually missing. We now always
+        # check every dependency the fallback chain can touch, regardless
+        # of which backend is configured.
         try:
             import pypdf
         except ImportError:
@@ -191,6 +217,16 @@ class ExtractFileContent(BaseTool):
             import PIL
         except ImportError:
             missing_deps.append("Pillow")
+
+        try:
+            import pytesseract
+        except ImportError:
+            missing_deps.append("pytesseract")
+
+        try:
+            import fitz  # PyMuPDF — needed to render PDF pages to images for OCR
+        except ImportError:
+            missing_deps.append("PyMuPDF (pip install pymupdf)")
 
         try:
             import pandas
@@ -237,17 +273,24 @@ class ExtractFileContent(BaseTool):
 
     def _check_file_access(self, file_doc) -> None:
         """
-        Verify the user has access to a file's parent document.
+        Verify the user has access to this file.
 
-        Beyond the generic File DocType read permission (checked by
-        requires_permission = "File"), this ensures the user can actually
-        read the document the file is attached to.
+        Access is granted when ANY of these is true:
+          1. The file is attached to a document the user can read.
+          2. The file is owned by the current user (chat_with_file sets owner=user).
+          3. The current user is a System Manager.
+
+        The old code used frappe.only_for("System Manager") for all private
+        unattached files. Every file uploaded via chat_with_file is private and
+        unattached, so non-admin users always hit a PermissionError, causing
+        _get_file_document to return None and extraction to silently return empty.
 
         Raises:
-            frappe.PermissionError: If user cannot access the parent document
-                or if a private unattached file is accessed by a non-admin.
+            frappe.PermissionError: If none of the above conditions is met.
         """
-        # If attached to a document, check parent document permission
+        current_user = frappe.session.user
+
+        # 1. Attached to a document - check parent document permission
         if file_doc.attached_to_doctype and file_doc.attached_to_name:
             if not frappe.has_permission(file_doc.attached_to_doctype, "read", file_doc.attached_to_name):
                 frappe.throw(
@@ -256,9 +299,15 @@ class ExtractFileContent(BaseTool):
                 )
             return
 
-        # Private unattached files require System Manager
+        # 2 & 3. Private unattached file - owner or System Manager only
         if file_doc.file_url and "/private/" in file_doc.file_url:
-            frappe.only_for("System Manager")
+            is_owner = (file_doc.owner == current_user)
+            is_admin = "System Manager" in frappe.get_roles(current_user)
+            if not (is_owner or is_admin):
+                frappe.throw(
+                    _("You do not have permission to access this private file"),
+                    frappe.PermissionError,
+                )
 
     def _check_file_size(self, file_doc) -> bool:
         """Check if file size is within limits"""
@@ -439,6 +488,15 @@ class ExtractFileContent(BaseTool):
             }
 
         except Exception as e:
+            # Don't give up here — a corrupted text layer, an encrypted PDF
+            # pypdf can't parse, or even pypdf itself being missing should
+            # still get a real shot at OCR before we report failure. The
+            # whole point of this tool is "always try every avenue" rather
+            # than stopping at the first error.
+            ocr_fallback = self._perform_ocr(file_content, arguments, file_type="pdf")
+            if ocr_fallback.get("success") and ocr_fallback.get("content", "").strip():
+                ocr_fallback["warning"] = f"Text-layer extraction failed ({e}); used OCR instead."
+                return ocr_fallback
             return {"success": False, "error": f"PDF extraction error: {str(e)}"}
 
     def _extract_image_content(self, file_content: bytes, arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -450,10 +508,19 @@ class ExtractFileContent(BaseTool):
         try:
             settings = frappe.get_single("Assistant Core Settings")
             return {
-                "backend": getattr(settings, "ocr_backend", "paddleocr") or "paddleocr",
+                "backend": getattr(settings, "ocr_backend", "tesseract") or "tesseract",
                 "ocr_language": getattr(settings, "ocr_language", "en") or "en",
                 "paddleocr_timeout": int(getattr(settings, "paddleocr_timeout", 120) or 120),
                 "paddleocr_max_memory_mb": int(getattr(settings, "paddleocr_max_memory_mb", 2048) or 2048),
+                # PaddlePaddle doesn't always have wheels for the latest Python
+                # (e.g. it currently has no Python 3.14 build). If the bench's
+                # own interpreter can't run PaddleOCR, set
+                # `paddleocr_python_path` in site_config.json (or via
+                # `bench set-config paddleocr_python_path /path/to/venv/bin/python`)
+                # to point at a separate venv with an older Python that has
+                # paddleocr/paddlepaddle installed. Defaults to the bench's
+                # own interpreter when unset.
+                "paddleocr_python_path": frappe.conf.get("paddleocr_python_path") or sys.executable,
                 "ollama_url": getattr(settings, "ollama_api_url", "http://localhost:11434")
                 or "http://localhost:11434",
                 "ollama_model": getattr(settings, "ollama_vision_model", "deepseek-ocr:latest")
@@ -461,24 +528,62 @@ class ExtractFileContent(BaseTool):
                 "ollama_timeout": int(getattr(settings, "ollama_request_timeout", 120) or 120),
             }
         except Exception:
-            return {"backend": "paddleocr", "ocr_language": "en"}
+            return {"backend": "tesseract", "ocr_language": "en", "paddleocr_python_path": sys.executable}
 
     def _get_ocr_language(self, arguments: Dict[str, Any], ocr_settings: Dict[str, Any]) -> str:
         """Get OCR language, preferring the per-request argument over settings default."""
         return arguments.get("language") or ocr_settings.get("ocr_language", "en")
 
-    def _is_paddle_ocr_available(self) -> bool:
-        """Check whether PaddleOCR runtime dependencies are installed."""
-        return importlib.util.find_spec("paddleocr") is not None
+    def _is_paddle_ocr_available(self, python_path: Optional[str] = None) -> bool:
+        """Check whether PaddleOCR is importable in the interpreter that will
+        actually run it.
 
-    def _missing_paddle_ocr_response(self) -> Dict[str, Any]:
+        If `python_path` is the current interpreter (the common case when
+        paddleocr is installed straight into the bench's venv), this is a
+        cheap in-process check. If it points at a separate venv (needed when
+        the bench's Python is too new for PaddlePaddle's published wheels),
+        we spawn that interpreter briefly to ask it — and cache the answer
+        for a few minutes since that costs a subprocess start each time.
+        """
+        python_path = python_path or sys.executable
+
+        if python_path == sys.executable:
+            return importlib.util.find_spec("paddleocr") is not None
+
+        cached = _PADDLE_AVAILABILITY_CACHE.get(python_path)
+        if cached and (time.time() - cached[1]) < _PADDLE_AVAILABILITY_TTL_SECONDS:
+            return cached[0]
+
+        try:
+            check = subprocess.run(
+                [
+                    python_path,
+                    "-c",
+                    "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('paddleocr') else 1)",
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=10,
+            )
+            available = check.returncode == 0
+        except Exception:
+            # Interpreter path doesn't exist, isn't executable, etc.
+            available = False
+
+        _PADDLE_AVAILABILITY_CACHE[python_path] = (available, time.time())
+        return available
+
+    def _missing_paddle_ocr_response(self, python_path: Optional[str] = None) -> Dict[str, Any]:
         """Return a clear error when PaddleOCR dependencies are unavailable."""
+        python_path = python_path or sys.executable
         return {
             "success": False,
             "error": (
-                "PaddleOCR is not installed in this environment. "
-                "Install the optional OCR dependencies for this app environment "
-                "(paddleocr and paddlepaddle) to enable local OCR."
+                f"PaddleOCR is not importable using the interpreter at '{python_path}'. "
+                "Either install paddleocr and paddlepaddle into that environment, or "
+                "set `paddleocr_python_path` in site_config.json to point at a venv "
+                "that has them installed (needed if your bench's Python is newer than "
+                "PaddlePaddle's published wheels support)."
             ),
             "ocr_backend": "paddleocr",
         }
@@ -488,8 +593,15 @@ class ExtractFileContent(BaseTool):
     ) -> Dict[str, Any]:
         """Perform OCR on image or PDF content.
 
-        Uses the configured backend (PaddleOCR by default, Ollama optional).
-        Falls back to PaddleOCR if Ollama fails or returns empty.
+        Tries the configured backend first (ollama / paddleocr / tesseract).
+        Tesseract is then ALWAYS attempted as a guaranteed last-resort fallback
+        if the configured backend fails or returns empty — previously this
+        safety net only existed on the "ollama" branch; if `ocr_backend` was
+        explicitly set to "paddleocr" or "tesseract", a crash/timeout/OOM in
+        that single backend meant the whole extraction just failed with
+        nothing else attempted. Tesseract is a plain apt package with no
+        GPU/model/network dependency, so it's the most reliable thing to
+        fall back to no matter what's configured.
 
         Args:
             file_content: Raw file bytes
@@ -497,27 +609,54 @@ class ExtractFileContent(BaseTool):
             file_type: File type string ("image" or "pdf")
         """
         ocr_settings = self._get_ocr_settings()
+        backend = ocr_settings.get("backend")
+        paddle_python_path = ocr_settings.get("paddleocr_python_path", sys.executable)
 
-        # Try Ollama vision backend if configured
-        if ocr_settings.get("backend") == "ollama":
-            result = self._try_ollama_ocr(file_content, arguments, file_type, ocr_settings)
-            if result and result.get("success") and result.get("content", "").strip():
-                return result
-            if self._is_paddle_ocr_available():
-                # Ollama failed or returned empty — fall through to PaddleOCR
-                return self._perform_paddle_ocr(file_content, arguments, file_type, ocr_settings)
-            if result:
-                return result
-            return self._missing_paddle_ocr_response()
+        primary_result = None
+        primary_backend_name = backend or "paddleocr"
 
-        # Tesseract path — explicit choice. Body lifted from pre-#99 (commit 736b3fc).
-        if ocr_settings.get("backend") == "tesseract":
-            return self._perform_tesseract_ocr(file_content, arguments)
+        if backend == "ollama":
+            primary_result = self._try_ollama_ocr(file_content, arguments, file_type, ocr_settings)
+        elif backend == "tesseract":
+            # Explicit choice — this IS the tesseract attempt, so just return
+            # it directly (nothing further to fall back to).
+            return self._perform_tesseract_ocr(file_content, arguments, file_type=file_type)
+        else:
+            # paddleocr (explicit or default)
+            if self._is_paddle_ocr_available(paddle_python_path):
+                primary_result = self._perform_paddle_ocr(file_content, arguments, file_type, ocr_settings)
+            else:
+                primary_result = self._missing_paddle_ocr_response(paddle_python_path)
 
-        # PaddleOCR path (default)
-        if not self._is_paddle_ocr_available():
-            return self._missing_paddle_ocr_response()
-        return self._perform_paddle_ocr(file_content, arguments, file_type, ocr_settings)
+        if (
+            primary_result
+            and primary_result.get("success")
+            and primary_result.get("content", "").strip()
+        ):
+            return primary_result
+
+        # Primary backend failed or returned empty — guaranteed Tesseract fallback.
+        tesseract_result = self._perform_tesseract_ocr(file_content, arguments, file_type=file_type)
+        if tesseract_result.get("success") and tesseract_result.get("content", "").strip():
+            tesseract_result["warning"] = (
+                f"Configured backend '{primary_backend_name}' returned no usable text "
+                f"({(primary_result or {}).get('error') or (primary_result or {}).get('message') or 'no detail'}); "
+                f"fell back to Tesseract."
+            )
+            return tesseract_result
+
+        # Nothing worked at all — surface BOTH underlying errors so the real
+        # cause is visible instead of a generic "no text found" message.
+        primary_detail = (primary_result or {}).get("error") or (primary_result or {}).get("message") or "no result"
+        tesseract_detail = tesseract_result.get("error") or tesseract_result.get("message") or "no result"
+        return {
+            "success": False,
+            "error": (
+                f"All OCR methods failed to extract text. "
+                f"{primary_backend_name}: {primary_detail} | tesseract: {tesseract_detail}"
+            ),
+            "ocr_backend": primary_backend_name,
+        }
 
     def _perform_paddle_ocr(
         self, file_content: bytes, arguments: Dict[str, Any], file_type: str, ocr_settings: Dict[str, Any]
@@ -637,49 +776,193 @@ class ExtractFileContent(BaseTool):
             except OSError:
                 pass
 
-    def _perform_tesseract_ocr(self, file_content: bytes, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Perform OCR on image content"""
+    def _preprocess_for_ocr(self, image):
+        """Clean up a phone/app-scanned page before handing it to Tesseract.
+
+        Phone scans (OKEN Scanner, CamScanner, etc.) are usually low-contrast,
+        slightly soft, and full-color when they don't need to be. Converting
+        to grayscale + boosting contrast + a light sharpen consistently
+        recovers small/blurry text — especially inside dense table cells —
+        without needing any extra system dependencies (pure Pillow).
+        """
+        from PIL import ImageOps, ImageFilter
+
+        if image.mode not in ("L",):
+            image = ImageOps.grayscale(image)
+        image = ImageOps.autocontrast(image)
+        image = image.filter(ImageFilter.SHARPEN)
+        return image
+
+    def _tesseract_ocr_image(self, image, language: str) -> str:
+        """Run Tesseract on a single preprocessed image, retrying with a
+        different page-segmentation mode if the first pass comes back
+        suspiciously empty (common on table-heavy or multi-column layouts
+        where PSM 3's default layout analysis misreads the structure)."""
+        import pytesseract
+
+        processed = self._preprocess_for_ocr(image)
+
+        # PSM 6 ("uniform block of text") tends to do best on invoices/forms
+        # with mixed paragraphs + tables, which is the common document type
+        # here. PSM 4 ("single column of variable sizes") is tried as a
+        # fallback for genuinely columnar/table-dominant layouts.
+        text = pytesseract.image_to_string(processed, lang=language, config="--psm 6")
+        if len(text.strip()) < 20:
+            alt_text = pytesseract.image_to_string(processed, lang=language, config="--psm 4")
+            if len(alt_text.strip()) > len(text.strip()):
+                text = alt_text
+        return text
+
+    def _perform_tesseract_ocr(self, file_content: bytes, arguments: Dict[str, Any], file_type: str = "image") -> Dict[str, Any]:
+        """Perform OCR using Tesseract on an image or scanned PDF.
+
+        KEY FIX: Previously used Image.frombytes("RGB", w, h, pix.samples) to
+        convert fitz pixmaps to PIL images. This is WRONG when pix.n != 3:
+        - pix.n=4 (RGBA, common on PDFs with alpha/transparency in some fitz
+          versions): frombytes("RGB") interprets 4-byte RGBA pixels as 3-byte
+          RGB, misaligning every pixel after the first. The image looks valid
+          (no exception), but is colour-shifted garbage. Tesseract returns
+          empty or near-empty output on such a corrupted image.
+        - pix.n=1 (grayscale): frombytes("RGB") raises ValueError — but this
+          was silently caught by the per-page try/except and logged as a page
+          error, never bubbling up as the real root cause.
+
+        The fix: pix.tobytes("png") + Image.open() lets PIL decode the PNG
+        with the correct channel count regardless of what fitz produced.
+        """
+        LANG_MAP = {
+            "en": "eng", "fr": "fra", "de": "deu", "es": "spa",
+            "it": "ita", "pt": "por", "nl": "nld", "ru": "rus",
+            "zh": "chi_sim", "ch": "chi_sim", "ja": "jpn", "ko": "kor",
+            "ar": "ara", "hi": "hin", "ta": "tam", "te": "tel",
+        }
+        ocr_settings = self._get_ocr_settings()
+        raw_lang = arguments.get("language") or ocr_settings.get("ocr_language", "en") or "en"
+        language = LANG_MAP.get(raw_lang.lower(), raw_lang)
+
         try:
-            # Check if pytesseract is available
+            import pytesseract
+            from PIL import Image
+        except ImportError:
+            return {
+                "success": False,
+                "error": "pytesseract or Pillow not installed.",
+                "install_command": "pip install pytesseract pillow",
+            }
+
+        try:
+            pytesseract.get_tesseract_version()
+        except Exception:
+            return {
+                "success": False,
+                "error": "Tesseract binary not found. Run: sudo apt-get install tesseract-ocr",
+            }
+
+        # PDF: render each page with PyMuPDF then OCR
+        if file_type == "pdf":
             try:
-                import pytesseract
-                from PIL import Image
+                import fitz
             except ImportError:
                 return {
                     "success": False,
-                    "error": "OCR dependencies not installed. Please install pytesseract and Pillow.",
-                    "install_command": "pip install pytesseract pillow",
+                    "error": "PyMuPDF not installed. Run: pip install pymupdf",
                 }
-
-            # Check if tesseract is installed on system
             try:
-                pytesseract.get_tesseract_version()
-            except Exception:
-                return {
-                    "success": False,
-                    "error": "Tesseract OCR not installed on system. Please install tesseract-ocr.",
-                    "install_command": "sudo apt-get install tesseract-ocr (Linux) or brew install tesseract (Mac)",
-                }
+                pdf_doc = fitz.open(stream=file_content, filetype="pdf")
+            except Exception as e:
+                return {"success": False, "error": f"Failed to open PDF: {str(e)}"}
 
-            # Open image
+            max_pages = arguments.get("max_pages", 50)
+            num_pages = min(len(pdf_doc), max_pages)
+            page_texts = []
+            page_errors = []
+
+            for page_num in range(num_pages):
+                try:
+                    page = pdf_doc[page_num]
+                    # 400dpi recovers small table text on phone/app-scanned docs
+                    # (OKEN Scanner, CamScanner, etc.) that 150-300dpi misses.
+                    pix = page.get_pixmap(dpi=400)
+                    # FIX: use pix.tobytes("png") + Image.open() instead of
+                    # Image.frombytes("RGB", ..., pix.samples).
+                    # frombytes("RGB") is WRONG when pix.n != 3:
+                    #   n=4 (RGBA): silently produces colour-corrupted image
+                    #         → Tesseract returns empty / garbage text
+                    #   n=1 (gray): raises ValueError (swallowed by except below)
+                    # tobytes("png") always writes a valid PNG with correct
+                    # channel count; Image.open() decodes it correctly.
+                    img = Image.open(io.BytesIO(pix.tobytes("png")))
+                    if img.mode != "RGB":
+                        img = img.convert("RGB")
+                    text = self._tesseract_ocr_image(img, language)
+                    if text.strip():
+                        page_texts.append(f"--- Page {page_num + 1} ---\n{text}")
+                    else:
+                        # Log per-page empty result so we know Tesseract ran
+                        # but found nothing — useful to distinguish from crashes.
+                        frappe.log_error(
+                            title="Tesseract empty page",
+                            message=(
+                                f"Page {page_num + 1}: Tesseract ran (lang={language!r}) "
+                                f"but returned no text. pix.n={pix.n}, "
+                                f"size={pix.width}x{pix.height}."
+                            ),
+                        )
+                except Exception as page_err:
+                    page_errors.append(f"Page {page_num + 1}: {str(page_err)}")
+                    frappe.log_error(title="Tesseract PDF Page Error", message=f"Page {page_num + 1}: {str(page_err)}")
+
+            pdf_doc.close()
+            combined = "\n\n".join(page_texts)
+
+            if not combined.strip():
+                if page_errors and len(page_errors) == num_pages:
+                    return {
+                        "success": False,
+                        "error": (
+                            f"Tesseract OCR failed on all {num_pages} page(s) — this is a "
+                            f"processing error, not an empty document. First error: {page_errors[0]}"
+                        ),
+                        "ocr_backend": "tesseract",
+                    }
+                return {"success": True, "content": "", "message": "No text detected in PDF via OCR", "ocr_backend": "tesseract"}
+
+            result = {
+                "success": True,
+                "content": combined,
+                "pages": num_pages,
+                "ocr_pages_with_text": len(page_texts),
+                "ocr_backend": "tesseract",
+                "ocr_language": language,
+            }
+            if page_errors:
+                result["warning"] = (
+                    f"{len(page_errors)} of {num_pages} page(s) failed OCR processing "
+                    f"and were skipped: {page_errors[0]}"
+                )
+            return result
+
+        # Image: open directly with PIL
+        try:
             image = Image.open(io.BytesIO(file_content))
-
-            # Perform OCR
-            language = arguments.get("language", "eng")
-            extracted_text = pytesseract.image_to_string(image, lang=language)
+            if image.mode not in ("RGB",):
+                image = image.convert("RGB")
+            extracted_text = self._tesseract_ocr_image(image, language)
 
             if not extracted_text.strip():
-                return {"success": True, "content": "", "message": "No text detected in image"}
+                return {"success": True, "content": "", "message": "No text detected in image", "ocr_backend": "tesseract"}
 
-            return {"success": True, "content": extracted_text, "ocr_language": language}
-
-        except Exception as e:
-            # Fallback message if OCR fails
             return {
                 "success": True,
-                "content": "[OCR not available - image file detected]",
-                "message": f"OCR failed: {str(e)}. To enable OCR, install tesseract-ocr system package.",
-                "fallback": True,
+                "content": extracted_text,
+                "ocr_backend": "tesseract",
+                "ocr_language": language,
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Tesseract OCR failed: {str(e)}",
+                "ocr_backend": "tesseract",
             }
 
     def _check_available_memory(self, required_mb: int) -> None:
@@ -711,19 +994,45 @@ class ExtractFileContent(BaseTool):
     ) -> Optional[Dict[str, Any]]:
         """Try OCR via Ollama vision model. Returns None on failure to allow PaddleOCR fallback."""
         try:
-            from PIL import Image
-
             if file_type == "pdf":
                 return self._perform_ollama_pdf_ocr(file_content, arguments, ocr_settings)
             else:
-                image = Image.open(io.BytesIO(file_content))
-                return self._ollama_extract_from_image(image, ocr_settings)
+                # Send image bytes directly as base64 — no PIL required
+                return self._ollama_extract_from_bytes(file_content, ocr_settings)
         except Exception as e:
             frappe.log_error(
                 title="Ollama OCR Error",
-                message=f"Ollama OCR failed, falling back to PaddleOCR: {str(e)}",
+                message=f"Ollama OCR failed: {str(e)}",
             )
             return None
+
+    def _ollama_extract_from_bytes(self, image_bytes: bytes, ocr_settings: Dict[str, Any]) -> Dict[str, Any]:
+        """Send raw image bytes to Ollama vision model. No PIL dependency."""
+        import requests
+
+        img_b64 = base64.b64encode(image_bytes).decode()
+
+        url = f"{ocr_settings['ollama_url']}/api/generate"
+        payload = {
+            "model": ocr_settings["ollama_model"],
+            "prompt": "Extract all text from this document image exactly as it appears.",
+            "images": [img_b64],
+            "stream": False,
+        }
+
+        response = requests.post(url, json=payload, timeout=ocr_settings["ollama_timeout"])
+        response.raise_for_status()
+        result = response.json()
+
+        content = result.get("response", "").strip()
+        if not content:
+            return {"success": True, "content": "", "message": "Ollama returned no text"}
+        return {
+            "success": True,
+            "content": content,
+            "ocr_backend": "ollama",
+            "ocr_model": ocr_settings["ollama_model"],
+        }
 
     def _ollama_extract_from_image(self, pil_image, ocr_settings: Dict[str, Any]) -> Dict[str, Any]:
         """Send a single PIL image to Ollama vision model for text extraction."""
