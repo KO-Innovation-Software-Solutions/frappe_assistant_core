@@ -43,7 +43,7 @@ class GetVehicleLastUpdate(BaseTool):
 				return {"success": False, "vehicle": vehicle, "error": "Device not found"}
 
 			positions = client.get_positions(device_id=device_id)
-			position  = positions[-1] if positions else {}  # ✅ latest position
+			position  = positions[-1] if positions else {}  # latest position
 
 			return {
 				"success":          True,
