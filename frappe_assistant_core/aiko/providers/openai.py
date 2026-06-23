@@ -1,7 +1,16 @@
-
 import json
 import os
 from openai import OpenAI
+import asyncio
+
+
+def _humanize_tool_name(name: str) -> str:
+    label = name.replace('_', ' ').strip()
+    for prefix in ("get ", "list ", "fetch ", "search "):
+        if label.startswith(prefix):
+            label = label[len(prefix):]
+            break
+    return label or name
 
 
 class OpenAIProvider:
@@ -13,7 +22,7 @@ class OpenAIProvider:
 
         self.openai = OpenAI(api_key=api_key, base_url=base_url)
 
-    async def process_query(self, query: str, session, messages: list) -> tuple:
+    async def process_query(self, query: str, session, messages: list, on_stage=None) -> tuple:
         tools = []
         if session:
             response = await session.list_tools()
@@ -31,9 +40,14 @@ class OpenAIProvider:
 
         total_input_tokens = 0
         total_output_tokens = 0
+        any_tool_called = False
 
         while True:
-            response = self.openai.chat.completions.create(
+            if any_tool_called and on_stage:
+                await on_stage("Putting together your answer…")
+
+            response = await asyncio.to_thread(
+                self.openai.chat.completions.create,
                 model=self.model,
                 messages=messages,
                 tools=tools if tools else None,
@@ -73,6 +87,8 @@ class OpenAIProvider:
 
             for tool_call in assistant_message.tool_calls:
                 tool_name = tool_call.function.name
+                if on_stage:
+                    await on_stage(f"Checking {_humanize_tool_name(tool_name)}…")
                 try:
                     tool_args = json.loads(tool_call.function.arguments)
                 except Exception:
@@ -95,4 +111,4 @@ class OpenAIProvider:
                     "tool_call_id": tool_call.id,
                     "content": tool_result,
                 })
-                
+                any_tool_called = True

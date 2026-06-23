@@ -1,3 +1,4 @@
+import asyncio
 import frappe
 from frappe import _
 from frappe.utils import now_datetime
@@ -72,18 +73,55 @@ def _update_session_meta(session, delta_messages: int = 1):
 
 
 @frappe.whitelist()
-def chat(message: str, thread_id: str):
+def chat(message: str, thread_id: str, request_id: str = None):
     if not frappe.session.user or frappe.session.user == "Guest":
         frappe.throw(_("Authentication required"))
 
     user = frappe.session.user
+    request_id = request_id or frappe.generate_hash(length=10)
 
     try:
+        frappe.enqueue(
+            "frappe_assistant_core.aiko.api.run_chat_job_sync",
+            queue="default",
+            timeout=300,
+            message=message,
+            thread_id=thread_id,
+            user=user,
+            request_id=request_id,
+        )
+    except Exception:
+        frappe.log_error(title="AIKO Chat Enqueue Error", message=frappe.get_traceback())
+        return {"success": False, "error": "Could not start the request. Please try again."}
+
+    return {
+        "success": True,
+        "queued": True,
+        "thread_id": thread_id,
+        "request_id": request_id,
+    }
+async def run_chat_job(message: str, thread_id: str, user: str, request_id: str):
+    """
+    Runs on the background worker. Executes the AIKO agent, publishing
+    stage updates as it goes, then publishes the final answer.
+    """
+    frappe.set_user(user)
+
+    async def on_stage(text):
+        await asyncio.to_thread(
+            frappe.publish_realtime,
+            event="aiko_stage",
+            message={"thread_id": thread_id, "request_id": request_id, "stage": text},
+            user=user,
+        )
+
+    try:
+        await on_stage("Reading your message…")
         settings = frappe.get_single("Assistant Core Settings")
         provider, model = _get_active_llm_info(settings)
         session = _get_or_create_session(thread_id, user)
         agent = AikoAgent(thread_id=thread_id)
-        result = agent.invoke(message)
+        result = await agent.invoke(message, on_stage=on_stage)
 
         response_text = result.get("content", "")
         input_tokens = result.get("input_tokens", 0)
@@ -105,18 +143,35 @@ def chat(message: str, thread_id: str):
             llm_model=model,
         )
         _update_session_meta(session, delta_messages=2)
-
         frappe.db.commit()
 
-        return {
-            "success": True,
-            "data": response_text,
-            "session_name": session.name,
-        }
+        frappe.publish_realtime(
+            event="aiko_done",
+            message={
+                "thread_id": thread_id,
+                "request_id": request_id,
+                "success": True,
+                "data": response_text,
+                "session_name": session.name,
+            },
+            user=user,
+        )
 
-    except Exception as e:
+    except Exception:
+        frappe.db.rollback()
         frappe.log_error(title="AIKO Chat Error", message=frappe.get_traceback())
-        return {
-            "success": False,
-            "error": str(e),
-        }
+        frappe.publish_realtime(
+            event="aiko_done",
+            message={
+                "thread_id": thread_id,
+                "request_id": request_id,
+                "success": False,
+                "error": "Something went wrong while processing your message.",
+            },
+            user=user,
+        )
+
+
+def run_chat_job_sync(message: str, thread_id: str, user: str, request_id: str):
+    """Sync entry point for Frappe's background worker."""
+    asyncio.run(run_chat_job(message, thread_id, user, request_id))

@@ -1,0 +1,997 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   AIKO CHAT  —  Full-page stylesheet  (www/aiko_chat.css)
+   Loaded ONLY on the /aiko_chat web page. Contains the sidebar layout,
+   topbar, full-page messages area, complete markdown rendering styles
+   (headings, lists, code blocks with syntax highlighting, tables,
+   blockquotes), empty state, suggestion chips, and the full-page input bar.
+   Widget styles live in  public/css/aiko_chat.css
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── ROOT GRID ──────────────────────────────────────────────────────────── */
+#aiko-page-root {
+    display: grid;
+    grid-template-columns: 272px 1fr;
+    height: 100vh;
+    overflow: hidden;
+    background: var(--aiko-surface);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    transition: grid-template-columns 0.25s ease;
+}
+
+#aiko-page-root.sidebar-collapsed {
+    grid-template-columns: 0 1fr;
+}
+
+@media (max-width: 900px) {
+    #aiko-page-root                        { grid-template-columns: 0 1fr; }
+    #aiko-page-root.sidebar-expanded       { grid-template-columns: 272px 1fr; }
+}
+
+/* ── SIDEBAR ────────────────────────────────────────────────────────────── */
+.aiko-sidebar {
+    display: flex;
+    flex-direction: column;
+    background: var(--aiko-p1);
+    overflow: hidden;
+    transition: width 0.25s ease;
+    border-right: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+#aiko-page-root.sidebar-collapsed .aiko-sidebar,
+#aiko-page-root:not(.sidebar-expanded) .aiko-sidebar { width: 0; }
+
+@media (min-width: 901px) {
+    #aiko-page-root:not(.sidebar-collapsed) .aiko-sidebar { width: 272px; }
+}
+
+.aiko-sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 16px 16px 20px;
+    flex-shrink: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.aiko-sidebar-title {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    color: #ffffff;
+    white-space: nowrap;
+}
+
+#aiko-page-new-chat {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    background: rgba(124, 58, 237, 0.2);
+    border: 1px solid rgba(124, 58, 237, 0.35);
+    color: var(--aiko-p8);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, border-color 0.15s;
+    flex-shrink: 0;
+}
+
+#aiko-page-new-chat:hover {
+    background: rgba(124, 58, 237, 0.4);
+    border-color: var(--aiko-p5);
+    color: #fff;
+}
+
+/* ── SIDEBAR SEARCH ─────────────────────────────────────────────────────── */
+.aiko-sidebar-search-wrap {
+    position: relative;
+    margin: 12px 12px 6px 12px;
+    flex-shrink: 0;
+}
+
+.aiko-search-icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--aiko-p6);
+    pointer-events: none;
+}
+
+#aiko-sidebar-search {
+    width: 100%;
+    padding: 8px 10px 8px 32px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 10px;
+    color: var(--aiko-p9);
+    font-size: 13px;
+    outline: none;
+    box-sizing: border-box;
+    transition: background 0.2s, border-color 0.2s;
+}
+
+#aiko-sidebar-search::placeholder { color: var(--aiko-p6); }
+#aiko-sidebar-search:focus {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: var(--aiko-p5);
+}
+
+/* ── SIDEBAR SESSION LIST ────────────────────────────────────────────────── */
+.aiko-sidebar-sessions {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 8px 20px 8px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
+}
+
+.aiko-sidebar-sessions::-webkit-scrollbar       { width: 3px; }
+.aiko-sidebar-sessions::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+}
+
+.aiko-sessions-group        { margin-bottom: 4px; }
+
+.aiko-sessions-group-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.9px;
+    color: var(--aiko-p6);
+    padding: 12px 8px 5px 10px;
+}
+
+.aiko-sidebar-sessions .aiko-session-item {
+    background: transparent;
+    border: none;
+    border-radius: 9px;
+    padding: 9px 10px 9px 14px;
+    margin-bottom: 1px;
+    cursor: pointer;
+    transition: background 0.12s;
+    position: relative;
+}
+
+.aiko-sidebar-sessions .aiko-session-item:hover  { background: rgba(124, 58, 237, 0.18); }
+.aiko-sidebar-sessions .aiko-session-item.active { background: rgba(124, 58, 237, 0.28); }
+
+.aiko-sidebar-sessions .aiko-session-item.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 7px;
+    bottom: 7px;
+    width: 3px;
+    background: var(--aiko-v3);
+    border-radius: 0 3px 3px 0;
+}
+
+.aiko-sidebar-sessions .aiko-session-title {
+    color: var(--aiko-p9);
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.aiko-sidebar-sessions .aiko-session-time {
+    color: var(--aiko-p6);
+    font-size: 10px;
+}
+
+.aiko-sidebar-sessions .aiko-sessions-loading {
+    color: var(--aiko-p6);
+    padding: 20px 12px;
+    font-size: 13px;
+    text-align: center;
+}
+
+/* ── ICON BUTTONS ───────────────────────────────────────────────────────── */
+.aiko-icon-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    padding: 6px;
+    transition: background 0.15s, color 0.15s;
+    color: var(--aiko-p9);
+    flex-shrink: 0;
+}
+
+.aiko-icon-btn:hover {
+    background: rgba(124, 58, 237, 0.25);
+    color: #fff;
+}
+
+/* ── MAIN CHAT AREA ─────────────────────────────────────────────────────── */
+.aiko-page-main {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--aiko-surface);
+    position: relative;
+}
+
+/* ── TOPBAR ─────────────────────────────────────────────────────────────── */
+.aiko-page-topbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 16px;
+    background: #ffffff;
+    border-bottom: 1px solid #ede9fe;
+    flex-shrink: 0;
+    height: 52px;
+    box-sizing: border-box;
+}
+
+.aiko-topbar-btn       { color: #7c3aed; }
+.aiko-topbar-btn:hover { background: #f3f0ff; color: var(--aiko-p4); }
+
+.aiko-page-session-label {
+    flex: 1;
+    font-size: 14px;
+    font-weight: 600;
+    color: #1a1040;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.aiko-topbar-actions {
+    display: flex;
+    gap: 2px;
+    align-items: center;
+}
+
+.aiko-status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #10b981;
+    flex-shrink: 0;
+    margin-right: 4px;
+}
+
+/* ── MESSAGES AREA ──────────────────────────────────────────────────────── */
+.aiko-page-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    scrollbar-width: thin;
+    scrollbar-color: #c4b5fd transparent;
+}
+
+.aiko-page-messages::-webkit-scrollbar       { width: 4px; }
+.aiko-page-messages::-webkit-scrollbar-thumb { background: #c4b5fd; border-radius: 4px; }
+
+/* ── FULL-PAGE MESSAGE ROW ──────────────────────────────────────────────── */
+.aiko-page-messages .aiko-message {
+    width: 100%;
+    max-width: 980px;
+    align-self: center;
+    padding: 0 32px;
+    box-sizing: border-box;
+    margin-bottom: 14px;
+    display: flex;
+}
+
+.aiko-page-messages .aiko-message-footer {
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+.aiko-page-messages .aiko-message:hover .aiko-message-footer {
+    opacity: 1;
+}
+.aiko-page-messages .aiko-message.user      { justify-content: flex-end; }
+.aiko-page-messages .aiko-message.assistant,
+.aiko-page-messages .aiko-message.error     { justify-content: flex-start; }
+
+/* ── MESSAGE INNER WIDTHS (full-page) ───────────────────────────────────── */
+.aiko-page-messages .aiko-message.assistant .aiko-message-inner,
+.aiko-page-messages .aiko-message.error .aiko-message-inner {
+    max-width: min(80%, 780px);
+    align-items: flex-start;
+}
+
+.aiko-page-messages .aiko-message.user .aiko-message-inner {
+    max-width: 65%;
+    align-items: flex-end;
+}
+
+/* ── FULL-PAGE BUBBLE OVERRIDES ─────────────────────────────────────────── */
+.aiko-page-messages .aiko-message.user .aiko-bubble {
+    background: linear-gradient(135deg, #7c3aed, #a21caf);
+    border: none;
+    box-shadow: 0 2px 12px rgba(124, 58, 237, 0.28);
+    color: #fff;
+}
+
+.aiko-page-messages .aiko-message.assistant .aiko-bubble {
+    background: #ffffff;
+    border: 1px solid #ede9fe;
+    box-shadow: 0 1px 6px rgba(124, 58, 237, 0.08);
+    color: #1a1040;
+    position: relative;
+    font-size: 14.5px;
+    line-height: 1.75;
+    padding: 16px 20px;
+    border-radius: 18px;
+    border-bottom-left-radius: 4px;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   MARKDOWN RENDERING  (full-page assistant bubble only)
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── PARAGRAPHS ─────────────────────────────────────────────────────────── */
+.aiko-page-messages .aiko-message.assistant .aiko-bubble p {
+    margin: 0 0 12px 0;
+    color: #1a1040;
+}
+.aiko-page-messages .aiko-message.assistant .aiko-bubble p:last-child {
+    margin-bottom: 0;
+}
+
+/* ── HEADINGS ───────────────────────────────────────────────────────────── */
+.aiko-page-messages .aiko-message.assistant .aiko-bubble h1,
+.aiko-page-messages .aiko-message.assistant .aiko-bubble h2,
+.aiko-page-messages .aiko-message.assistant .aiko-bubble h3,
+.aiko-page-messages .aiko-message.assistant .aiko-bubble h4 {
+    font-weight: 700;
+    color: #1a1040;
+    margin: 18px 0 8px 0;
+    line-height: 1.3;
+}
+.aiko-page-messages .aiko-message.assistant .aiko-bubble h1 { font-size: 20px; }
+.aiko-page-messages .aiko-message.assistant .aiko-bubble h2 { font-size: 17px; border-bottom: 1px solid #ede9fe; padding-bottom: 6px; }
+.aiko-page-messages .aiko-message.assistant .aiko-bubble h3 { font-size: 15px; color: #3d1a8a; }
+.aiko-page-messages .aiko-message.assistant .aiko-bubble h4 { font-size: 14px; color: #5b21b6; }
+.aiko-page-messages .aiko-message.assistant .aiko-bubble h1:first-child,
+.aiko-page-messages .aiko-message.assistant .aiko-bubble h2:first-child,
+.aiko-page-messages .aiko-message.assistant .aiko-bubble h3:first-child { margin-top: 0; }
+
+/* ── LISTS ──────────────────────────────────────────────────────────────── */
+.aiko-page-messages .aiko-message.assistant .aiko-bubble ul,
+.aiko-page-messages .aiko-message.assistant .aiko-bubble ol {
+    padding-left: 22px;
+    margin: 8px 0 12px 0;
+}
+.aiko-page-messages .aiko-message.assistant .aiko-bubble li {
+    margin-bottom: 6px;
+    line-height: 1.65;
+    color: #1a1040;
+}
+.aiko-page-messages .aiko-message.assistant .aiko-bubble ul li::marker { color: var(--aiko-p5); }
+.aiko-page-messages .aiko-message.assistant .aiko-bubble ol li::marker { color: var(--aiko-p5); font-weight: 600; }
+.aiko-page-messages .aiko-message.assistant .aiko-bubble li > ul,
+.aiko-page-messages .aiko-message.assistant .aiko-bubble li > ol { margin: 4px 0; }
+
+/* ── STRONG / EM ────────────────────────────────────────────────────────── */
+.aiko-page-messages .aiko-message.assistant .aiko-bubble strong {
+    font-weight: 650;
+    color: #2e0f6e;
+}
+.aiko-page-messages .aiko-message.assistant .aiko-bubble em {
+    font-style: italic;
+    color: #4c1d95;
+}
+
+/* ── LINKS ──────────────────────────────────────────────────────────────── */
+.aiko-page-messages .aiko-message.assistant .aiko-bubble a {
+    color: var(--aiko-p5);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+.aiko-page-messages .aiko-message.assistant .aiko-bubble a:hover {
+    color: var(--aiko-p4);
+}
+
+/* ── INLINE CODE ────────────────────────────────────────────────────────── */
+.aiko-page-messages .aiko-message.assistant .aiko-bubble code:not(pre code) {
+    background: #f0ebff;
+    color: #5b21b6;
+    padding: 2px 6px;
+    border-radius: 5px;
+    font-size: 13px;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, 'Courier New', monospace;
+    border: 1px solid #e0d4fd;
+    white-space: nowrap;
+}
+
+/* ── CODE BLOCK WRAPPER ─────────────────────────────────────────────────── */
+.aiko-code-block {
+    margin: 14px 0;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid #d8ccf8;
+    background: #1e1433;
+}
+.aiko-code-block:first-child { margin-top: 0; }
+.aiko-code-block:last-child  { margin-bottom: 0; }
+
+/* ── CODE BLOCK HEADER ──────────────────────────────────────────────────── */
+.aiko-code-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 14px;
+    background: #120d26;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.aiko-code-lang {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--aiko-p7);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+.aiko-code-copy {
+    background: rgba(124, 58, 237, 0.2);
+    border: 1px solid rgba(124, 58, 237, 0.3);
+    color: var(--aiko-p8);
+    border-radius: 6px;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    font-family: inherit;
+    line-height: 1.6;
+}
+
+.aiko-code-copy:hover {
+    background: rgba(124, 58, 237, 0.4);
+    border-color: var(--aiko-p5);
+    color: #fff;
+}
+
+.aiko-code-copy.copied {
+    background: rgba(16, 185, 129, 0.2);
+    border-color: rgba(16, 185, 129, 0.4);
+    color: #6ee7b7;
+}
+
+/* ── CODE BLOCK BODY ────────────────────────────────────────────────────── */
+.aiko-code-block pre {
+    margin: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    background: #1e1433 !important;
+    padding: 14px 16px !important;
+    overflow-x: auto;
+    font-size: 13px !important;
+    line-height: 1.65 !important;
+    white-space: pre !important;
+}
+
+.aiko-code-block pre code {
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    font-size: inherit !important;
+    color: #e2d9f3 !important;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, 'Courier New', monospace;
+    white-space: pre !important;
+}
+
+/* ── HIGHLIGHT.JS SYNTAX THEME (purple-dark) ─────────────────────────────── */
+.aiko-code-block .hljs-keyword,
+.aiko-code-block .hljs-selector-tag   { color: #c084fc; font-weight: 600; }
+.aiko-code-block .hljs-string,
+.aiko-code-block .hljs-attr           { color: #86efac; }
+.aiko-code-block .hljs-number,
+.aiko-code-block .hljs-literal        { color: #f9a8d4; }
+.aiko-code-block .hljs-comment        { color: #6b7280; font-style: italic; }
+.aiko-code-block .hljs-function,
+.aiko-code-block .hljs-title          { color: #93c5fd; }
+.aiko-code-block .hljs-variable,
+.aiko-code-block .hljs-name           { color: #fde68a; }
+.aiko-code-block .hljs-type,
+.aiko-code-block .hljs-class          { color: #67e8f9; }
+.aiko-code-block .hljs-built_in       { color: #a5b4fc; }
+.aiko-code-block .hljs-operator,
+.aiko-code-block .hljs-punctuation    { color: #d1d5db; }
+.aiko-code-block .hljs-tag            { color: #f87171; }
+.aiko-code-block .hljs-attribute      { color: #fbbf24; }
+.aiko-code-block .hljs-selector-class { color: #a78bfa; }
+.aiko-code-block .hljs-meta           { color: #94a3b8; }
+.aiko-code-block .hljs-deletion       { color: #fca5a5; background: rgba(239, 68, 68, 0.15); }
+.aiko-code-block .hljs-addition       { color: #86efac; background: rgba(16, 185, 129, 0.12); }
+
+/* ── BLOCKQUOTE ─────────────────────────────────────────────────────────── */
+.aiko-page-messages .aiko-message.assistant .aiko-bubble blockquote {
+    margin: 12px 0;
+    padding: 10px 16px;
+    border-left: 3px solid var(--aiko-p5);
+    background: #f8f5ff;
+    border-radius: 0 8px 8px 0;
+    color: #4c1d95;
+    font-style: italic;
+}
+.aiko-page-messages .aiko-message.assistant .aiko-bubble blockquote p {
+    margin: 0;
+    color: inherit;
+}
+
+/* ── HORIZONTAL RULE ────────────────────────────────────────────────────── */
+.aiko-page-messages .aiko-message.assistant .aiko-bubble hr {
+    border: none;
+    border-top: 1px solid #ede9fe;
+    margin: 16px 0;
+}
+
+/* ── TABLE ──────────────────────────────────────────────────────────────── */
+.aiko-page-messages .aiko-message.assistant .aiko-bubble .aiko-table-wrap {
+    overflow-x: auto;
+    margin: 14px 0;
+    border-radius: 10px;
+    border: 1px solid #e0d8f8;
+}
+.aiko-page-messages .aiko-message.assistant .aiko-bubble table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin: 0;
+    min-width: 360px;
+}
+.aiko-page-messages .aiko-message.assistant .aiko-bubble th,
+.aiko-page-messages .aiko-message.assistant .aiko-bubble td {
+    border: none;
+    border-bottom: 1px solid #ede9fe;
+    padding: 9px 14px;
+    text-align: left;
+    vertical-align: top;
+}
+.aiko-page-messages .aiko-message.assistant .aiko-bubble tr:last-child td { border-bottom: none; }
+.aiko-page-messages .aiko-message.assistant .aiko-bubble th {
+    background: #f5f0ff;
+    font-weight: 650;
+    color: #3d1a8a;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+.aiko-page-messages .aiko-message.assistant .aiko-bubble tr:nth-child(even) td { background: #faf8ff; }
+.aiko-page-messages .aiko-message.assistant .aiko-bubble tr:hover td          { background: #f3eeff; }
+
+/* ── IMAGE ──────────────────────────────────────────────────────────────── */
+.aiko-page-messages .aiko-message.assistant .aiko-bubble img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 10px;
+    margin: 10px 0;
+    border: 1px solid #ede9fe;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   EMPTY STATE & SUGGESTIONS
+   ════════════════════════════════════════════════════════════════════════════ */
+.aiko-empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 56px 24px 40px 24px;
+    max-width: 520px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.aiko-empty-icon {
+    width: 72px;
+    height: 72px;
+    background: linear-gradient(135deg, #ede9fe, #f3e8ff);
+    border-radius: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 20px;
+    color: var(--aiko-p5);
+}
+
+.aiko-empty-state h3 {
+    font-size: 21px;
+    font-weight: 700;
+    color: #1a1040;
+    margin: 0 0 8px 0;
+}
+
+.aiko-empty-state p {
+    font-size: 14px;
+    color: #6b7280;
+    margin: 0 0 28px 0;
+    line-height: 1.65;
+}
+
+.aiko-suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 9px;
+    justify-content: center;
+}
+
+.aiko-suggestion-chip {
+    background: #ffffff;
+    border: 1px solid #e9d5ff;
+    border-radius: 22px;
+    padding: 9px 18px;
+    font-size: 13px;
+    color: #5b21b6;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+    white-space: nowrap;
+    font-family: inherit;
+}
+
+.aiko-suggestion-chip:hover {
+    background: #f3f0ff;
+    border-color: var(--aiko-p6);
+    color: var(--aiko-p4);
+    box-shadow: 0 2px 10px rgba(124, 58, 237, 0.14);
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SCROLL PILL, LOADING, LOAD MORE  (full-page overrides)
+   ════════════════════════════════════════════════════════════════════════════ */
+#aiko-page-root .aiko-scroll-btn {
+    position: absolute;
+    bottom: 92px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    background: var(--aiko-p5);
+    box-shadow: 0 4px 14px rgba(124, 58, 237, 0.35);
+}
+
+#aiko-page-messages .aiko-sessions-loading {
+    color: var(--aiko-p6);
+    text-align: center;
+    padding: 48px 0;
+    font-size: 13px;
+    align-self: center;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   INPUT AREA  (full-page)
+   ════════════════════════════════════════════════════════════════════════════ */
+.aiko-page-input-area {
+    padding: 12px 24px 10px 24px;
+    background: #ffffff;
+    border-top: 1px solid #ede9fe;
+    flex-shrink: 0;
+}
+
+.aiko-input-wrapper {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    background: #f8f7ff;
+    border: 1.5px solid #e9d5ff;
+    border-radius: 16px;
+    padding: 10px 10px 10px 16px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    max-width: 760px;
+    margin: 0 auto;
+    box-sizing: border-box;
+}
+
+.aiko-input-wrapper:focus-within {
+    border-color: var(--aiko-p5);
+    box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12);
+    background: #ffffff;
+}
+
+.aiko-page-textarea {
+    flex: 1;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-size: 14px;
+    line-height: 1.55;
+    color: #1a1040;
+    resize: none;
+    max-height: 160px;
+    overflow-y: auto;
+    font-family: inherit;
+}
+
+.aiko-page-textarea::placeholder { color: var(--aiko-p6); }
+
+.aiko-page-send-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--aiko-p5), var(--aiko-v1));
+    color: white;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: opacity 0.2s, transform 0.1s;
+}
+
+.aiko-page-send-btn:hover   { opacity: 0.88; }
+.aiko-page-send-btn:active  { transform: scale(0.93); }
+.aiko-page-send-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+/* ── STOP BUTTON ─────────────────────────────────────────────────────────── */
+.aiko-page-stop-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: transparent;
+    border: 2px solid #ef4444;
+    color: #ef4444;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.2s, color 0.2s, transform 0.1s;
+}
+
+.aiko-page-stop-btn:hover  { background: #ef4444; color: white; transform: scale(1.08); }
+.aiko-page-stop-btn:active { transform: scale(0.93); }
+
+.aiko-input-hint {
+    text-align: center;
+    font-size: 11px;
+    color: var(--aiko-p6);
+    margin: 6px 0 0 0;
+    letter-spacing: 0.2px;
+}
+/* ═══════════════════════════════════════════════════════════════════════════
+   THINKING INDICATOR  —  truck + dots + phrase
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.aiko-think-plain {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+/* ── TRUCK SCENE WRAPPER ─────────────────────────────────────────────────── */
+.aiko-truck-scene {
+    position: relative;
+    width: 72px;
+    height: 38px;
+    flex-shrink: 0;
+    overflow: visible;
+}
+
+/* ── SPEED LINES ─────────────────────────────────────────────────────────── */
+.aiko-speed-line {
+    position: absolute;
+    height: 1.5px;
+    background: linear-gradient(to left, #7c3aed, transparent);
+    border-radius: 2px;
+    animation: aiko-speed-slide 0.7s linear infinite;
+    opacity: 0;
+}
+.aiko-speed-line.sl1 { width: 14px; top: 10px; left: -2px; animation-delay: 0s;    animation-duration: 0.65s; }
+.aiko-speed-line.sl2 { width: 10px; top: 18px; left: -4px; animation-delay: 0.2s;  animation-duration: 0.75s; }
+.aiko-speed-line.sl3 { width: 8px;  top: 26px; left: -1px; animation-delay: 0.4s;  animation-duration: 0.6s;  }
+
+@keyframes aiko-speed-slide {
+    0%   { opacity: 0;   transform: translateX(0); }
+    20%  { opacity: 0.7; }
+    100% { opacity: 0;   transform: translateX(-18px); }
+}
+
+/* ── TRUCK SVG ───────────────────────────────────────────────────────────── */
+.aiko-truck-svg {
+    position: absolute;
+    left: 10px;
+    top: 0;
+    animation: aiko-truck-bounce 0.55s ease-in-out infinite alternate;
+}
+
+@keyframes aiko-truck-bounce {
+    from { transform: translateY(0px); }
+    to   { transform: translateY(-4px); }
+}
+
+/* ── WHEEL SPIN ──────────────────────────────────────────────────────────── */
+.aiko-wheel {
+    animation: aiko-wheel-spin 0.5s linear infinite;
+    transform-box: fill-box;
+    transform-origin: center;
+}
+
+/* ── EXHAUST PUFFS ───────────────────────────────────────────────────────── */
+.aiko-puff {
+    position: absolute;
+    border-radius: 50%;
+    background: rgba(124, 58, 237, 0.25);
+    animation: aiko-puff-rise 1.2s ease-out infinite;
+    pointer-events: none;
+}
+.aiko-puff.p1 { width: 6px;  height: 6px;  top: 4px;  left: 8px;  animation-delay: 0s;    }
+.aiko-puff.p2 { width: 9px;  height: 9px;  top: 0px;  left: 5px;  animation-delay: 0.4s;  }
+.aiko-puff.p3 { width: 5px;  height: 5px;  top: 6px;  left: 11px; animation-delay: 0.8s;  }
+
+@keyframes aiko-puff-rise {
+    0%   { opacity: 0;   transform: translateY(0)    scale(0.5); }
+    20%  { opacity: 0.6; transform: translateY(-4px) scale(0.8); }
+    80%  { opacity: 0.2; transform: translateY(-10px) scale(1.3); }
+    100% { opacity: 0;   transform: translateY(-14px) scale(1.5); }
+}
+
+/* ── ROAD ────────────────────────────────────────────────────────────────── */
+.aiko-road {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 72px;
+    height: 3px;
+    background: #e5e7eb;
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.aiko-road-dash {
+    position: absolute;
+    top: 1px;
+    height: 1px;
+    width: 8px;
+    background: #7c3aed;
+    border-radius: 1px;
+    animation: aiko-road-scroll 0.5s linear infinite;
+    opacity: 0.6;
+}
+.aiko-road-dash.d1 { left: 0px;  animation-delay: 0s;    }
+.aiko-road-dash.d2 { left: 24px; animation-delay: 0.17s; }
+.aiko-road-dash.d3 { left: 48px; animation-delay: 0.34s; }
+
+@keyframes aiko-road-scroll {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-24px); }
+}
+
+/* ── THREE DOTS ──────────────────────────────────────────────────────────── */
+.aiko-think-dots-wrap {
+    position: relative;
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+}
+
+.aiko-tdot {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 6px;
+    height: 6px;
+    margin-top: -3px;
+    margin-left: -3px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #7c3aed, #a21caf);
+}
+
+.aiko-tdot.d1 { animation: aiko-dot1 4.5s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+.aiko-tdot.d2 { animation: aiko-dot2 4.5s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+.aiko-tdot.d3 { animation: aiko-dot3 4.5s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+
+@keyframes aiko-dot1 {
+    0%   { transform: translate(-9px, 0); }
+    10%  { transform: translate(-9px, -5px); }
+    20%  { transform: translate(-9px, 0); }
+    35%  { transform: translate(0px, -8px); }
+    50%  { transform: translate(6.9px, 4px); }
+    65%  { transform: translate(-6.9px, 4px); }
+    80%  { transform: translate(0px, -8px) scale(1.35); }
+    90%  { transform: translate(0px, -8px) scale(1); }
+    100% { transform: translate(-9px, 0); }
+}
+
+@keyframes aiko-dot2 {
+    0%   { transform: translate(0px, 0); }
+    10%  { transform: translate(0px, -5px); }
+    20%  { transform: translate(0px, 0); }
+    35%  { transform: translate(6.9px, 4px); }
+    50%  { transform: translate(-6.9px, 4px); }
+    65%  { transform: translate(0px, -8px); }
+    80%  { transform: translate(6.9px, 4px) scale(1.35); }
+    90%  { transform: translate(6.9px, 4px) scale(1); }
+    100% { transform: translate(0px, 0); }
+}
+
+@keyframes aiko-dot3 {
+    0%   { transform: translate(9px, 0); }
+    10%  { transform: translate(9px, -5px); }
+    20%  { transform: translate(9px, 0); }
+    35%  { transform: translate(-6.9px, 4px); }
+    50%  { transform: translate(0px, -8px); }
+    65%  { transform: translate(6.9px, 4px); }
+    80%  { transform: translate(-6.9px, 4px) scale(1.35); }
+    90%  { transform: translate(-6.9px, 4px) scale(1); }
+    100% { transform: translate(9px, 0); }
+}
+
+/* ── THINKING TEXT ───────────────────────────────────────────────────────── */
+.aiko-chat-messages .aiko-think-text,
+.aiko-page-messages .aiko-think-text {
+    font-size: 13px;
+    font-weight: 500;
+    color: #6d4fc7;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.22s ease, transform 0.22s ease;
+    font-style: normal;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.aiko-chat-messages .aiko-think-text.aiko-think-visible,
+.aiko-page-messages .aiko-think-text.aiko-think-visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+/* ── CONVERSATION LIMIT ──────────────────────────────────────────────────── */
+
+.aiko-limit-banner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px 10px 16px;
+    background: #faf5ff;
+    border-top: 1px solid #ede9fe;
+    text-align: center;
+}
+
+.aiko-limit-banner p {
+    font-size: 13px;
+    color: #5b21b6;
+    font-weight: 500;
+    margin: 0;
+    line-height: 1.5;
+}
+
+.aiko-limit-new-chat-btn {
+    background: linear-gradient(135deg, #7c3aed, #a21caf);
+    color: white;
+    border: none;
+    border-radius: 20px;
+    padding: 9px 22px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    transition: opacity 0.2s, transform 0.1s;
+    box-shadow: 0 4px 12px rgba(124, 58, 237, 0.35);
+}
+
+.aiko-limit-new-chat-btn:hover  { opacity: 0.88; }
+.aiko-limit-new-chat-btn:active { transform: scale(0.97); }
+
+.aiko-input-disabled {
+    opacity: 0.4;
+    pointer-events: none;
+    user-select: none;
+}

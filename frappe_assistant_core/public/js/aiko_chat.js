@@ -1,9 +1,65 @@
-$(document).ready(function() {
+$(document).ready(function () {
     if (frappe.session.user === "Guest") return;
 
+    // ── THINKING PHRASES ──────────────────────────────────────────────────
+    const THINK_PHRASES = [
+        "Searching through your data…",
+        "Looking into this…",
+        "Checking records…",
+        "Digging through documents…",
+        "Pulling that up…",
+        "Scanning through everything…",
+        "Let me check on this…",
+        "Going through the details…",
+        "Fetching the latest info…",
+        "Almost there…"
+    ];
+    let _thinkInterval = null;
+
+    function shuffledPhrases() {
+        const arr = THINK_PHRASES.slice();
+        for (let i = arr.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [arr[i], arr[j]] = [arr[j], arr[i]];
+        }
+        return arr;
+    }
+
+    function startThinkCycle(el) {
+        const phrases = shuffledPhrases();
+        let idx = 0;
+        const $el = $(el);
+        $el.text(phrases[idx]).addClass('aiko-think-visible');
+        _thinkInterval = setInterval(function () {
+            $el.removeClass('aiko-think-visible');
+            setTimeout(function () {
+                idx = (idx + 1) % phrases.length;
+                $el.text(phrases[idx]);
+                $el.addClass('aiko-think-visible');
+            }, 220);
+        }, 2200);
+    }
+
+    function stopThinkCycle() {
+        if (_thinkInterval) { clearInterval(_thinkInterval); _thinkInterval = null; }
+    }
+
+    function updateThinkingStage(text) {
+        stopThinkCycle();
+        const $el = $('#aiko-thinking .aiko-think-text');
+        if (!$el.length || !text) return;
+        $el.removeClass('aiko-think-visible');
+        setTimeout(function () {
+            $el.text(text);
+            $el.addClass('aiko-think-visible');
+        }, 220);
+    }
+
+    // ── HTML TEMPLATE ─────────────────────────────────────────────────────
     const chatHtml = `
         <div id="aiko-chat-widget">
             <div id="aiko-chat-button" title="Chat with AIKO">
+                <span class="aiko-notif-badge" id="aiko-notif-badge"></span>
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
             </div>
             <div id="aiko-chat-window" style="display: none;">
@@ -16,7 +72,7 @@ $(document).ready(function() {
                         <button id="aiko-new-chat-btn" title="New Chat">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                         </button>
-                        <button id="aiko-chat-fullscreen" title="Toggle Fullscreen">
+                        <button id="aiko-chat-fullscreen" title="Open fullscreen">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
                         </button>
                         <button id="aiko-chat-close">&times;</button>
@@ -35,19 +91,21 @@ $(document).ready(function() {
                     </div>
                 </div>
 
-                <div class="aiko-chat-messages" id="aiko-chat-messages">
-                    <!-- messages rendered here dynamically -->
-                </div>
+                <div class="aiko-chat-messages" id="aiko-chat-messages"></div>
 
-                <!-- Scroll to bottom / New message pill -->
                 <div id="aiko-scroll-btn" class="aiko-scroll-btn hidden">
                     <span id="aiko-scroll-label">↓</span>
                 </div>
 
                 <div class="aiko-chat-input-area">
-                    <input type="text" id="aiko-chat-input" placeholder="Ask something..." autocomplete="off" />
+                    <textarea id="aiko-chat-input" placeholder="Ask something…" autocomplete="off" rows="1"></textarea>
                     <button id="aiko-chat-send">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                    </button>
+                    <button id="aiko-stop-btn" title="Stop generating" style="display: none;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="7" y="7" width="10" height="10" fill="currentColor" stroke="none"></rect>
+                        </svg>
                     </button>
                 </div>
             </div>
@@ -55,67 +113,194 @@ $(document).ready(function() {
     `;
 
     $('body').append(chatHtml);
+    $('body').append('<div id="aiko-toast"></div>');
+    $('#aiko-toast').on('click', function () {
+        $('#aiko-chat-window').show();
+        clearResponseNotification();
+        $('#aiko-chat-input').focus();
+    });
 
-    let thread_id = frappe.utils.get_random(10);
-    let isThinking = false;
+    // ── STATE ─────────────────────────────────────────────────────────────
+    let thread_id          = frappe.utils.get_random(10);
+    let isThinking         = false;
     let currentSessionName = null;
-    let oldestMessageCreation = null;
-    let hasMoreMessages = false;
-    let isLoadingOlder = false;
-    let hasAutoLoaded = false;
-    let isScrolledUp = false;   // tracks whether user has scrolled up
+    let currentRequestId   = null;
+    let hasAutoLoaded      = false;
+    let messageCount       = 0;
+    let abortedRequests    = new Set();
 
-    // ── SCROLL TRACKING + SCROLL-TO-BOTTOM BUTTON ─────────────────────────────
-    $('#aiko-chat-messages').on('scroll', function() {
+    // ── WIDGET VISIBILITY ─────────────────────────────────────────────────
+    function syncWidgetVisibility() {
+        let onFullPage = false;
+        if (typeof frappe.get_route === 'function') {
+            const route = frappe.get_route();
+            onFullPage = route && route[0] === 'aiko-chat';
+        } else {
+            onFullPage = window.location.pathname.includes('/aiko_chat');
+        }
+
+        if (sessionStorage.getItem('aiko_open_widget') === '1') {
+            const savedSession = sessionStorage.getItem('aiko_widget_session');
+            const savedThread  = sessionStorage.getItem('aiko_widget_thread');
+            const wasThinking  = sessionStorage.getItem('aiko_widget_thinking') === '1';
+            const pendingMsg   = sessionStorage.getItem('aiko_widget_pending') || '';
+            sessionStorage.removeItem('aiko_open_widget');
+            sessionStorage.removeItem('aiko_widget_session');
+            sessionStorage.removeItem('aiko_widget_thread');
+            sessionStorage.removeItem('aiko_widget_thinking');
+            sessionStorage.removeItem('aiko_widget_pending');
+
+            $('#aiko-chat-window').show();
+            hasAutoLoaded = true;
+
+            if (savedSession) {
+                loadSession(savedSession, savedThread);
+                if (wasThinking) {
+                    setTimeout(function () {
+                        if (pendingMsg) appendMessage('user', pendingMsg, false);
+                        showThinking();
+                    }, 800);
+                }
+            } else if (savedThread && wasThinking) {
+                thread_id = savedThread;
+                if (pendingMsg) appendMessage('user', pendingMsg, false);
+                showThinking();
+            } else {
+                autoLoadLastSession();
+            }
+        }
+
+        if (onFullPage) {
+            $('#aiko-chat-widget').addClass('aiko-widget-hidden');
+        } else {
+            $('#aiko-chat-widget').removeClass('aiko-widget-hidden');
+        }
+    }
+
+    if (frappe.router) {
+        frappe.router.on('change', function () { syncWidgetVisibility(); });
+    }
+    syncWidgetVisibility();
+
+    // ── SCROLL TRACKING ───────────────────────────────────────────────────
+    let isScrolledUp = false;
+
+    $('#aiko-chat-messages').on('scroll', function () {
         const el = this;
         const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
         isScrolledUp = distFromBottom > 80;
         if (isScrolledUp) {
-            // Show the arrow button (without "New message" unless a new msg arrived)
             $('#aiko-scroll-btn').removeClass('hidden');
         } else {
-            // At bottom — hide button and clear any "New message" label
             $('#aiko-scroll-btn').addClass('hidden');
             $('#aiko-scroll-label').text('↓');
             $('#aiko-scroll-btn').removeClass('aiko-scroll-btn-new');
         }
     });
 
-    $('#aiko-scroll-btn').on('click', function() {
-        scrollToBottom();
-    });
+    $('#aiko-scroll-btn').on('click', function () { scrollToBottom(); });
 
-    // ── HELPERS: timestamp ────────────────────────────────────────────────────
+    // ── HELPERS ───────────────────────────────────────────────────────────
     function formatTimestamp(dateStr) {
         const date = dateStr ? new Date(dateStr.replace(' ', 'T')) : new Date();
         return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
     }
 
-    // ── AUTO-LOAD LAST SESSION ON FIRST OPEN ──────────────────────────────────
+    function formatRelativeTime(datetimeStr) {
+        if (!datetimeStr) return '';
+        const date      = new Date(datetimeStr.replace(' ', 'T'));
+        const now       = new Date();
+        const diffMins  = Math.floor((now - date) / 60000);
+        const diffHours = Math.floor(diffMins / 60);
+        const diffDays  = Math.floor(diffHours / 24);
+        if (diffMins  < 1)  return 'Just now';
+        if (diffMins  < 60) return diffMins  + 'm ago';
+        if (diffHours < 24) return diffHours + 'h ago';
+        if (diffDays  < 7)  return diffDays  + 'd ago';
+        return date.toLocaleDateString();
+    }
+
+    function escapeHtml(str) {
+        return String(str)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function sessionDisplayTitle(s) {
+        if (s.name) return s.name;
+        if (s.title && s.title.trim()) return s.title.trim();
+        return 'New Chat';
+    }
+
+    // ── EMPTY STATE ───────────────────────────────────────────────────────
+    function showEmptyState() {
+        const allSuggestions = [
+            { label: "Fleet overview",       prompt: "How many vehicles are in the fleet?" },
+            { label: "Active vehicles",      prompt: "List active vehicles." },
+            { label: "Compliance alerts",    prompt: "Which vehicles have expired compliance documents?" },
+            { label: "Expiring soon",        prompt: "Which compliances are expiring soon?" },
+            { label: "Open inspections",     prompt: "Show all open inspections." },
+            { label: "Overdue inspections",  prompt: "Which inspections are overdue?" },
+            { label: "Open issues",          prompt: "Show all issues." },
+            { label: "High priority issues", prompt: "Show all high priority issues." },
+            { label: "Critical faults",      prompt: "Show all critical faults." },
+            { label: "Work orders",          prompt: "Show all submitted work orders." },
+            { label: "Overdue work orders",  prompt: "Which work orders are overdue?" },
+            { label: "Fuel entries today",   prompt: "Show fuel entries for today." },
+            { label: "Service reminders",    prompt: "Show all upcoming service reminders." },
+            { label: "Active trips",         prompt: "What trips are active right now?" },
+            { label: "Today's bookings",     prompt: "Show today's bookings." },
+            { label: "Pending bookings",     prompt: "Show pending bookings." },
+        ];
+        const picked    = allSuggestions.sort(() => Math.random() - 0.5).slice(0, 4);
+        const chipsHtml = picked.map(s =>
+            `<button class="aiko-suggestion-chip" data-prompt="${s.prompt}">${s.label}</button>`
+        ).join('');
+
+        $('#aiko-chat-messages').html(`
+            <div class="aiko-empty-state">
+                <div class="aiko-empty-icon">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                </div>
+                <h3>How can I help?</h3>
+                <p>Ask me anything about your fleet.</p>
+                <div class="aiko-suggestions">
+                    ${chipsHtml}
+                </div>
+            </div>
+        `);
+
+        $('#aiko-chat-messages').off('click', '.aiko-suggestion-chip').on('click', '.aiko-suggestion-chip', function () {
+            $('#aiko-chat-input').val($(this).data('prompt'));
+            sendMessage();
+        });
+    }
+
+    // ── AUTO-LOAD LAST SESSION ────────────────────────────────────────────
     function autoLoadLastSession() {
-        $('#aiko-chat-messages').html('<div class="aiko-sessions-loading" id="aiko-msg-loading">Loading...</div>');
+        $('#aiko-chat-messages').html('<div class="aiko-sessions-loading" id="aiko-msg-loading">Loading…</div>');
         frappe.call({
             method: 'frappe_assistant_core.api.assistant_api.get_chat_sessions',
-            callback: function(r) {
+            callback: function (r) {
                 if (r.message && r.message.success && r.message.sessions && r.message.sessions.length > 0) {
-                    const latest = r.message.sessions[0];
-                    loadSession(latest.name, latest.thread_id);
+                    loadSession(r.message.sessions[0].name, r.message.sessions[0].thread_id);
                 } else {
                     $('#aiko-chat-messages').html('');
-                    appendMessage('assistant', 'Hello! I am AIKO, your AI assistant. How can I help you today?');
+                    showEmptyState();
                 }
             },
-            error: function() {
+            error: function () {
                 $('#aiko-chat-messages').html('');
-                appendMessage('assistant', 'Hello! I am AIKO, your AI assistant. How can I help you today?');
+                showEmptyState();
             }
         });
     }
 
-    // ── OPEN / CLOSE ──────────────────────────────────────────────────────────
-    $('#aiko-chat-button').on('click', function() {
+    // ── OPEN / CLOSE ──────────────────────────────────────────────────────
+    $('#aiko-chat-button').on('click', function () {
         $('#aiko-chat-window').toggle();
         if ($('#aiko-chat-window').is(':visible')) {
+            clearResponseNotification();
             if (!hasAutoLoaded) {
                 hasAutoLoaded = true;
                 autoLoadLastSession();
@@ -124,48 +309,52 @@ $(document).ready(function() {
         }
     });
 
-    $('#aiko-chat-close').on('click', function() {
+    $('#aiko-chat-close').on('click', function () {
         $('#aiko-chat-window').hide();
     });
 
-    // ── FULLSCREEN ────────────────────────────────────────────────────────────
-    $('#aiko-chat-fullscreen').on('click', function() {
-        $('#aiko-chat-window').toggleClass('fullscreen');
-        if ($('#aiko-chat-window').hasClass('fullscreen')) {
-            $(this).html('<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"></path></svg>');
-        } else {
-            $(this).html('<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>');
+    $('#aiko-chat-fullscreen').on('click', function () {
+        $('#aiko-chat-window').hide();
+        let params = '?thread=' + thread_id;
+        if (currentSessionName) params += '&session=' + currentSessionName;
+        if (isThinking) {
+            params += '&thinking=1';
+            const lastUserMsg = $('#aiko-chat-messages .aiko-message.user').last().find('.aiko-bubble').text().trim();
+            if (lastUserMsg) params += '&pending=' + encodeURIComponent(lastUserMsg);
         }
+        window.location.href = '/aiko_chat' + params;
     });
 
-    // ── NEW CHAT ──────────────────────────────────────────────────────────────
-    $('#aiko-new-chat-btn').on('click', function() {
-        startNewChat();
-    });
+    // ── NEW CHAT ──────────────────────────────────────────────────────────
+    $('#aiko-new-chat-btn').on('click', function () { startNewChat(); });
 
     function startNewChat() {
-        thread_id = frappe.utils.get_random(10);
+        thread_id          = frappe.utils.get_random(10);
         currentSessionName = null;
-        oldestMessageCreation = null;
-        hasMoreMessages = false;
-        isScrolledUp = false;
+        currentRequestId   = null;
+        messageCount       = 0;
+        abortedRequests.clear();
+
+        $('#aiko-limit-banner').remove();
+        $('#aiko-chat-send').prop('disabled', false);
+        $('#aiko-chat-input').prop('disabled', false).attr('placeholder', 'Ask something…');
+        $('.aiko-chat-input-area').removeClass('aiko-input-disabled');
+
         $('#aiko-chat-messages').html('');
         $('#aiko-scroll-btn').addClass('hidden');
-        appendMessage('assistant', 'Hello! I am AIKO, your AI assistant. How can I help you today?');
+        showEmptyState();
         hideSessionsPanel();
         $('#aiko-chat-input').focus();
     }
 
-    // ── HISTORY PANEL ─────────────────────────────────────────────────────────
-    $('#aiko-history-btn').on('click', function() {
+    // ── HISTORY PANEL ─────────────────────────────────────────────────────
+    $('#aiko-history-btn').on('click', function () {
         const panel = $('#aiko-sessions-panel');
         if (panel.hasClass('hidden')) showSessionsPanel();
         else hideSessionsPanel();
     });
 
-    $('#aiko-sessions-close').on('click', function() {
-        hideSessionsPanel();
-    });
+    $('#aiko-sessions-close').on('click', function () { hideSessionsPanel(); });
 
     function showSessionsPanel() {
         $('#aiko-sessions-panel').removeClass('hidden');
@@ -177,17 +366,17 @@ $(document).ready(function() {
     }
 
     function loadSessionsList() {
-        $('#aiko-sessions-list').html('<div class="aiko-sessions-loading">Loading chats...</div>');
+        $('#aiko-sessions-list').html('<div class="aiko-sessions-loading">Loading chats…</div>');
         frappe.call({
             method: 'frappe_assistant_core.api.assistant_api.get_chat_sessions',
-            callback: function(r) {
+            callback: function (r) {
                 if (r.message && r.message.success) {
                     renderSessionsList(r.message.sessions);
                 } else {
                     $('#aiko-sessions-list').html('<div class="aiko-sessions-loading">Could not load chats.</div>');
                 }
             },
-            error: function() {
+            error: function () {
                 $('#aiko-sessions-list').html('<div class="aiko-sessions-loading">Network error.</div>');
             }
         });
@@ -199,142 +388,184 @@ $(document).ready(function() {
             return;
         }
         let html = '';
-        sessions.forEach(function(s) {
+        sessions.forEach(function (s) {
             const timeLabel = formatRelativeTime(s.preview_time || s.last_active);
-            const title = s.title || ('Chat ' + (s.thread_id || s.name).substring(0, 8));
-            const isActive = (s.name === currentSessionName) ? 'active' : '';
+            const title     = sessionDisplayTitle(s);
+            const isActive  = (s.name === currentSessionName) ? 'active' : '';
             html += `
                 <div class="aiko-session-item ${isActive}" data-session-name="${s.name}" data-thread-id="${s.thread_id}">
                     <div class="aiko-session-title">${escapeHtml(title)}</div>
                     <div class="aiko-session-preview">${escapeHtml(s.preview || '')}</div>
                     <div class="aiko-session-time">${timeLabel}</div>
-                </div>
-            `;
+                </div>`;
         });
         $('#aiko-sessions-list').html(html);
-        $('#aiko-sessions-list').off('click', '.aiko-session-item').on('click', '.aiko-session-item', function() {
+        $('#aiko-sessions-list').off('click', '.aiko-session-item').on('click', '.aiko-session-item', function () {
             loadSession($(this).data('session-name'), $(this).data('thread-id'));
         });
     }
 
-    // ── LOAD SESSION ──────────────────────────────────────────────────────────
+    // ── LOAD SESSION ──────────────────────────────────────────────────────
     function loadSession(sessionName, sessionThreadId) {
         hideSessionsPanel();
         currentSessionName = sessionName;
-        thread_id = sessionThreadId;
-        oldestMessageCreation = null;
-        hasMoreMessages = false;
-        isScrolledUp = false;
-        $('#aiko-scroll-btn').addClass('hidden');
-
-        $('#aiko-chat-messages').html('<div class="aiko-sessions-loading" id="aiko-msg-loading">Loading messages...</div>');
+        thread_id          = sessionThreadId;
+        $('#aiko-chat-messages').html('<div class="aiko-sessions-loading" id="aiko-msg-loading">Loading messages…</div>');
 
         frappe.call({
             method: 'frappe_assistant_core.api.assistant_api.get_session_messages',
             args: { session_name: sessionName, limit: 20 },
-            callback: function(r) {
+            callback: function (r) {
                 $('#aiko-msg-loading').remove();
                 $('#aiko-chat-messages').html('');
 
                 if (r.message && r.message.success) {
                     const msgs = r.message.messages;
-                    hasMoreMessages = r.message.has_more || false;
-
-                    if (hasMoreMessages) {
-                        $('#aiko-chat-messages').prepend(`
-                            <div id="aiko-load-more" class="aiko-load-more">
-                                <button id="aiko-load-more-btn">Load older messages</button>
-                            </div>
-                        `);
-                        bindLoadMoreBtn();
-                    }
-
                     if (msgs.length === 0) {
-                        appendMessage('assistant', 'Hello! I am AIKO, your AI assistant. How can I help you today?');
+                        showEmptyState();
                     } else {
-                        msgs.forEach(function(m) { appendMessage(m.role, m.content, false, m.creation); });
-                        oldestMessageCreation = msgs[0].creation;
+                        messageCount = 0;
+                        msgs.forEach(function (m) { appendMessage(m.role, m.content, false, m.creation); });
+                        checkMessageLimit();
                         scrollToBottom();
                     }
                 } else {
-                    appendMessage('assistant', 'Hello! I am AIKO, your AI assistant. How can I help you today?');
+                    showEmptyState();
                 }
             },
-            error: function() {
+            error: function () {
                 $('#aiko-msg-loading').remove();
-                appendMessage('assistant', 'Hello! I am AIKO, your AI assistant. How can I help you today?');
+                showEmptyState();
             }
         });
     }
 
-    // ── LOAD OLDER MESSAGES ───────────────────────────────────────────────────
-    function bindLoadMoreBtn() {
-        $('#aiko-chat-messages').off('click', '#aiko-load-more-btn').on('click', '#aiko-load-more-btn', function() {
-            loadOlderMessages();
+    // ── MARKDOWN RENDERER ─────────────────────────────────────────────────
+    function renderMarkdown(text) {
+        text = text.replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '');
+
+        const codeBlocks = [];
+        text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, function (_, lang, code) {
+            const idx = codeBlocks.length;
+            codeBlocks.push({ lang: lang || 'text', code: code.trimEnd() });
+            return `\x00CODE${idx}\x00`;
         });
-    }
 
-    function loadOlderMessages() {
-        if (!currentSessionName || !hasMoreMessages || isLoadingOlder) return;
-        isLoadingOlder = true;
+        const tables = [];
+        text = text.replace(/^(\|.+\|\n)([ \t]*\|[-| :]+\|\n)((?:[ \t]*\|.+\|\n?)+)/gm,
+            function (_, header, _sep, body) {
+                const idx = tables.length;
 
-        const btn = $('#aiko-load-more-btn');
-        btn.text('Loading...').prop('disabled', true);
-
-        frappe.call({
-            method: 'frappe_assistant_core.api.assistant_api.get_session_messages',
-            args: { session_name: currentSessionName, limit: 20, before_creation: oldestMessageCreation },
-            callback: function(r) {
-                isLoadingOlder = false;
-                btn.text('Load older messages').prop('disabled', false);
-
-                if (r.message && r.message.success) {
-                    const msgs = r.message.messages;
-                    hasMoreMessages = r.message.has_more || false;
-
-                    if (msgs.length > 0) {
-                        const container = $('#aiko-chat-messages')[0];
-                        const prevScrollHeight = container.scrollHeight;
-                        msgs.forEach(function(m) {
-                            $('#aiko-load-more').after(buildMessageHtml(m.role, m.content, m.creation));
-                        });
-                        container.scrollTop = container.scrollHeight - prevScrollHeight;
-                        oldestMessageCreation = msgs[0].creation;
-                    }
-
-                    if (!hasMoreMessages) {
-                        $('#aiko-load-more').remove();
-                    }
+                function parseRow(row) {
+                    return row.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
                 }
-            },
-            error: function() {
-                isLoadingOlder = false;
-                btn.text('Load older messages').prop('disabled', false);
+
+                function inlineMarkdown(s) {
+                    return s
+                        .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+                        .replace(/\*\*(.+?)\*\*/g,     '<strong>$1</strong>')
+                        .replace(/\*(.+?)\*/g,         '<em>$1</em>')
+                        .replace(/_([^_]+)_/g,         '<em>$1</em>')
+                        .replace(/`([^`]+)`/g,         '<code>$1</code>');
+                }
+
+                const headers = parseRow(header);
+                const rows    = body.trim().split('\n').map(parseRow);
+                const th = headers.map(h => `<th>${inlineMarkdown(h)}</th>`).join('');
+                const tr = rows.map(r =>
+                    '<tr>' + r.map(c => `<td>${inlineMarkdown(c)}</td>`).join('') + '</tr>'
+                ).join('');
+
+                tables.push(
+                    `<div class="aiko-table-wrap"><table><thead><tr>${th}</tr></thead><tbody>${tr}</tbody></table></div>`
+                );
+                return `\x00TABLE${idx}\x00`;
             }
+        );
+
+        let html = text
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/^#### (.+)$/gm, '<h4>$1</h4>')
+            .replace(/^### (.+)$/gm,  '<h3>$1</h3>')
+            .replace(/^## (.+)$/gm,   '<h2>$1</h2>')
+            .replace(/^# (.+)$/gm,    '<h1>$1</h1>')
+            .replace(/\*\*\*(.+?)\*\*\*/gs, '<strong><em>$1</em></strong>')
+            .replace(/\*\*(.+?)\*\*/gs,     '<strong>$1</strong>')
+            .replace(/\*(.+?)\*/gs,         '<em>$1</em>')
+            .replace(/_([^_]+)_/g,          '<em>$1</em>')
+            .replace(/`([^`]+)`/g,          '<code>$1</code>')
+            .replace(/^---$/gm,             '<hr>')
+            .replace(/^&gt; (.+)$/gm,       '<blockquote><p>$1</p></blockquote>')
+            .replace(/^\s*[-*] (.+)$/gm,    '<li>$1</li>')
+            .replace(/^\s*\d+\. (.+)$/gm,   '<oli>$1</oli>')
+            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+
+        html = html.replace(/(<li>[\s\S]*?<\/li>\n?)+/g, m => '<ul>' + m + '</ul>');
+        html = html.replace(/(<oli>[\s\S]*?<\/oli>\n?)+/g, m =>
+            '<ol>' + m.replace(/<oli>/g, '<li>').replace(/<\/oli>/g, '</li>') + '</ol>');
+
+        html = html.split(/\n{2,}/).map(function (block) {
+            block = block.trim();
+            if (!block) return '';
+            if (/^<(h[1-6]|ul|ol|hr|blockquote|pre|div)/.test(block)) return block;
+            if (/^\x00TABLE\d+\x00$/.test(block)) return block;
+            return '<p>' + block.replace(/\n/g, '<br>') + '</p>';
+        }).join('\n');
+
+        html = html.replace(/\x00TABLE(\d+)\x00/g, (_, idx) => tables[parseInt(idx)]);
+
+        html = html.replace(/\x00CODE(\d+)\x00/g, function (_, idx) {
+            const { lang, code } = codeBlocks[parseInt(idx)];
+            const escaped = code
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const label = lang && lang !== 'text' ? lang : '';
+            return `<div class="aiko-code-block">
+                <div class="aiko-code-header">
+                    <span class="aiko-code-lang">${label}</span>
+                    <button class="aiko-code-copy" data-code="${escaped.replace(/"/g, '&quot;')}">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                        Copy
+                    </button>
+                </div>
+                <pre><code class="language-${lang}">${escaped}</code></pre>
+            </div>`;
         });
+
+        return html;
     }
 
-    // ── MESSAGING ─────────────────────────────────────────────────────────────
+    // ── MESSAGE BUILDING ──────────────────────────────────────────────────
     function buildMessageHtml(role, text, creation) {
-        let content = text;
-        if (frappe.markdown) content = frappe.markdown(text);
-        const time = formatTimestamp(creation);
+        let content = (role === 'assistant') ? renderMarkdown(text) : escapeHtml(text);
+        const time  = formatTimestamp(creation);
+        const copyBtn = (role === 'assistant')
+            ? `<button class="aiko-copy-btn" data-text="${escapeHtml(text)}">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2"/>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+                Copy
+            </button>`
+            : '';
         return `
             <div class="aiko-message ${role}">
-                <div class="aiko-bubble">
-                    ${content}
-                    <div class="aiko-timestamp">${time}</div>
+                <div class="aiko-message-inner">
+                    <div class="aiko-bubble">${content}</div>
+                    <div class="aiko-message-footer">
+                        <span class="aiko-timestamp">${time}</span>
+                        ${copyBtn}
+                    </div>
                 </div>
             </div>`;
     }
 
     function appendMessage(role, text, doScroll, creation) {
         if (doScroll === undefined) doScroll = true;
+        $('#aiko-chat-messages').find('.aiko-empty-state').remove();
         $('#aiko-chat-messages').append(buildMessageHtml(role, text, creation));
-
+        messageCount++;
         if (doScroll) {
             if (isScrolledUp) {
-                // User is scrolled up — show "New message ↓" pill instead of forcing scroll
                 $('#aiko-scroll-label').text('New message ↓');
                 $('#aiko-scroll-btn').removeClass('hidden').addClass('aiko-scroll-btn-new');
             } else {
@@ -352,82 +583,221 @@ $(document).ready(function() {
         $('#aiko-scroll-btn').removeClass('aiko-scroll-btn-new');
     }
 
+    // ── COPY BUTTONS ──────────────────────────────────────────────────────
+    $('#aiko-chat-messages').on('click', '.aiko-copy-btn', function () {
+        const text = $(this).data('text');
+        navigator.clipboard && navigator.clipboard.writeText(text).then(() => {
+            $(this).text('Copied!');
+            const self = this;
+            setTimeout(function () {
+                $(self).html(`
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2"/>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                    </svg> Copy`);
+            }, 1500);
+        });
+    });
+
+    $('#aiko-chat-messages').on('click', '.aiko-code-copy', function () {
+        const code = $(this).data('code');
+        navigator.clipboard && navigator.clipboard.writeText(code).then(() => {
+            const $btn = $(this);
+            $btn.addClass('copied').html(`
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                Copied!`);
+            setTimeout(() => {
+                $btn.removeClass('copied').html(`
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    Copy`);
+            }, 2000);
+        });
+    });
+
+    // ── THINKING ──────────────────────────────────────────────────────────
     function showThinking() {
         isThinking = true;
-        $('#aiko-chat-send').prop('disabled', true).css({ 'background': '#c4b5fd', 'cursor': 'not-allowed' });
-        $('#aiko-chat-messages').append(`
-            <div class="aiko-message assistant" id="aiko-thinking">
-                <div class="aiko-bubble thinking-bubble">
-                    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+
+        $('#aiko-chat-send').hide();
+        $('#aiko-stop-btn').css('display', 'flex');
+
+        const $bubble = $(`
+        <div class="aiko-message assistant" id="aiko-thinking">
+            <div class="aiko-think-plain">
+
+                <div class="aiko-truck-scene">
+                    <div class="aiko-puff p1"></div>
+                    <div class="aiko-puff p2"></div>
+                    <div class="aiko-puff p3"></div>
+
+                    <div class="aiko-speed-line sl1"></div>
+                    <div class="aiko-speed-line sl2"></div>
+                    <div class="aiko-speed-line sl3"></div>
+
+                    <svg class="aiko-truck-svg" width="54" height="32" viewBox="0 0 54 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="1" y="6" width="30" height="20" rx="2" stroke="#7c3aed" stroke-width="1.5" fill="none"/>
+                        <path d="M31 14 L31 26 L52 26 L52 14 L46 6 L31 6 Z" stroke="#7c3aed" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+                        <path d="M33 13 L33 8 L45 8 L50 13 Z" stroke="#7c3aed" stroke-width="1.2" fill="none" stroke-linejoin="round"/>
+                        <line x1="39" y1="14" x2="39" y2="25" stroke="#7c3aed" stroke-width="1" stroke-dasharray="1 2"/>
+                        <line x1="40" y1="20" x2="43" y2="20" stroke="#7c3aed" stroke-width="1.2" stroke-linecap="round"/>
+                        <rect x="50" y="13" width="3" height="2" rx="0.5" stroke="#7c3aed" stroke-width="1" fill="none"/>
+                        <line x1="4" y1="6" x2="4" y2="2" stroke="#7c3aed" stroke-width="1.5" stroke-linecap="round"/>
+                        <path d="M38 26 Q41 28 44 26" stroke="#7c3aed" stroke-width="1.2" fill="none"/>
+                        <path d="M8 26 Q11 28 14 26" stroke="#7c3aed" stroke-width="1.2" fill="none"/>
+                        <circle cx="11" cy="27" r="4.5" stroke="#7c3aed" stroke-width="1.5" fill="none" class="aiko-wheel"/>
+                        <circle cx="11" cy="27" r="1.5" stroke="#7c3aed" stroke-width="1" fill="none"/>
+                        <line x1="11" y1="22.5" x2="11" y2="31.5" stroke="#7c3aed" stroke-width="0.8" class="aiko-wheel"/>
+                        <line x1="6.5"  y1="27" x2="15.5" y2="27" stroke="#7c3aed" stroke-width="0.8" class="aiko-wheel"/>
+                        <circle cx="41" cy="27" r="4.5" stroke="#7c3aed" stroke-width="1.5" fill="none" class="aiko-wheel"/>
+                        <circle cx="41" cy="27" r="1.5" stroke="#7c3aed" stroke-width="1" fill="none"/>
+                        <line x1="41" y1="22.5" x2="41" y2="31.5" stroke="#7c3aed" stroke-width="0.8" class="aiko-wheel"/>
+                        <line x1="36.5" y1="27" x2="45.5" y2="27" stroke="#7c3aed" stroke-width="0.8" class="aiko-wheel"/>
+                    </svg>
+
+                    <div class="aiko-road">
+                        <div class="aiko-road-dash d1"></div>
+                        <div class="aiko-road-dash d2"></div>
+                        <div class="aiko-road-dash d3"></div>
+                    </div>
                 </div>
+
+                <div class="aiko-think-dots-wrap">
+                    <span class="aiko-tdot d1"></span>
+                    <span class="aiko-tdot d2"></span>
+                    <span class="aiko-tdot d3"></span>
+                </div>
+
+                <span class="aiko-think-text"></span>
             </div>
-        `);
+        </div>`);
+
+        $('#aiko-chat-messages').find('.aiko-empty-state').remove();
+        $('#aiko-chat-messages').append($bubble);
+        startThinkCycle($bubble.find('.aiko-think-text')[0]);
         scrollToBottom();
     }
 
     function removeThinking() {
+        stopThinkCycle();
         isThinking = false;
         $('#aiko-thinking').remove();
-        $('#aiko-chat-send').prop('disabled', false).css({ 'background': '#6366f1', 'cursor': 'pointer' });
+        $('#aiko-stop-btn').hide();
+        $('#aiko-chat-send').show();
     }
 
+    // ── STOP BUTTON ───────────────────────────────────────────────────────
+    $('#aiko-stop-btn').on('click', function () {
+        if (!isThinking) return;
+        if (currentRequestId) {
+            abortedRequests.add(currentRequestId);
+        }
+        removeThinking();
+        appendMessage('assistant', '_Response stopped._');
+        checkMessageLimit();
+    });
+
+    // ── MESSAGE LIMIT ─────────────────────────────────────────────────────
+    function checkMessageLimit() {
+        if (messageCount >= 20) {
+            $('#aiko-chat-send').prop('disabled', true);
+            $('#aiko-chat-input').prop('disabled', true).attr('placeholder', 'Message limit reached.');
+            $('.aiko-chat-input-area').addClass('aiko-input-disabled');
+
+            if (!$('#aiko-limit-banner').length) {
+                $('.aiko-chat-input-area').before(`
+                    <div id="aiko-limit-banner" class="aiko-limit-banner">
+                        <p>This chat has reached 20 messages.<br>Start a new session to continue.</p>
+                        <button class="aiko-limit-new-chat-btn" id="aiko-widget-limit-new-chat">+ New Chat</button>
+                    </div>`);
+                $('#aiko-widget-limit-new-chat').on('click', function () { startNewChat(); });
+            }
+        }
+    }
+
+    // ── SEND ──────────────────────────────────────────────────────────────
     function sendMessage() {
         if (isThinking) return;
         const input = $('#aiko-chat-input');
-        const text = input.val().trim();
+        const text  = input.val().trim();
         if (!text) return;
 
-        input.val('');
+        input.val('').css('height', 'auto');
         appendMessage('user', text);
+        currentRequestId = frappe.utils.get_random(10);
         showThinking();
 
         frappe.call({
             method: 'frappe_assistant_core.aiko.api.chat',
-            args: {
-                message: text,
-                thread_id: thread_id
-            },
-            callback: function(r) {
-                removeThinking();
-                if (r.message && r.message.success) {
-                    appendMessage('assistant', r.message.data);
-                    if (r.message.session_name && !currentSessionName) {
-                        currentSessionName = r.message.session_name;
-                    }
-                } else {
-                    appendMessage('error', r.message ? r.message.error : 'An error occurred.');
+            args: { message: text, thread_id: thread_id, request_id: currentRequestId },
+            callback: function (r) {
+                if (!r.message || !r.message.success) {
+                    if (!isThinking) return;
+                    removeThinking();
+                    appendMessage('assistant', 'Could not start the request. Please try again.');
                 }
             },
-            error: function(err) {
+            error: function () {
+                if (!isThinking) return;
                 removeThinking();
-                appendMessage('error', 'Network error or server unavailable.');
+                appendMessage('assistant', 'Network error or server unavailable.');
             }
         });
     }
 
-    $('#aiko-chat-send').on('click', sendMessage);
-    $('#aiko-chat-input').on('keypress', function(e) {
-        if (e.which == 13) sendMessage();
+    $('#aiko-chat-input').on('keydown', function (e) {
+        if (e.which === 13 && !e.shiftKey) { e.preventDefault(); sendMessage(); }
     });
 
-    // ── HELPERS ───────────────────────────────────────────────────────────────
-    function escapeHtml(str) {
-        return String(str)
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    $('#aiko-chat-input').on('input', function () {
+        this.style.height = 'auto';
+        this.style.height = Math.min(this.scrollHeight, 100) + 'px';
+    });
+
+    $('#aiko-chat-send').on('click', function () { sendMessage(); });
+
+    // ── REALTIME LISTENERS ────────────────────────────────────────────────
+    frappe.realtime.on('aiko_stage', function (data) {
+        if (!isThinking) return;
+        if (data.thread_id  !== thread_id)        return;
+        if (data.request_id !== currentRequestId) return;
+        updateThinkingStage(data.stage);
+    });
+
+    function showResponseNotification(previewText) {
+        $('#aiko-notif-badge').show().addClass('visible');
+        if (!$('#aiko-chat-window').is(':visible')) {
+            const preview = previewText.replace(/[#*`]/g, '').substring(0, 60);
+            $('#aiko-toast').text('AIKO: ' + preview + (previewText.length > 60 ? '…' : ''));
+            $('#aiko-toast').fadeIn(200);
+            clearTimeout(window._aikoToastTimer);
+            window._aikoToastTimer = setTimeout(function () {
+                $('#aiko-toast').fadeOut(300);
+            }, 4000);
+        }
     }
 
-    function formatRelativeTime(datetimeStr) {
-        if (!datetimeStr) return '';
-        const date = new Date(datetimeStr.replace(' ', 'T'));
-        const now = new Date();
-        const diffMins = Math.floor((now - date) / 60000);
-        const diffHours = Math.floor(diffMins / 60);
-        const diffDays = Math.floor(diffHours / 24);
-        if (diffMins < 1) return 'Just now';
-        if (diffMins < 60) return diffMins + 'm ago';
-        if (diffHours < 24) return diffHours + 'h ago';
-        if (diffDays < 7) return diffDays + 'd ago';
-        return date.toLocaleDateString();
+    function clearResponseNotification() {
+        $('#aiko-notif-badge').hide().removeClass('visible');
+        $('#aiko-toast').fadeOut(200);
     }
+
+    frappe.realtime.on('aiko_done', function (data) {
+        if (data.thread_id !== thread_id) return;
+        if (abortedRequests.has(data.request_id)) {
+            abortedRequests.delete(data.request_id);
+            return;
+        }
+        if (currentRequestId && data.request_id !== currentRequestId) return;
+        removeThinking();
+        if (data.success) {
+            appendMessage('assistant', data.data);
+            if (data.session_name && !currentSessionName) {
+                currentSessionName = data.session_name;
+            }
+            showResponseNotification(data.data);
+            checkMessageLimit();
+        } else {
+            appendMessage('assistant', data.error || 'An error occurred.');
+        }
+    });
 });

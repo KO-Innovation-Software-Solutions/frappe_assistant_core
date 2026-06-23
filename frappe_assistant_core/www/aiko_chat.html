@@ -1,0 +1,66 @@
+{% extends "templates/web.html" %}
+
+{% block title %}AIKO Assistant{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="/assets/frappe_assistant_core/css/aiko_chat.css">
+<link rel="stylesheet" href="/aiko_chat.css">
+<style>
+    .navbar,
+    .web-footer,
+    footer.web-footer,
+    nav.navbar,
+    .page-header,
+    .container.page-header,
+    .web-sidebar {
+        display: none !important;
+    }
+
+    html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        height: 100% !important;
+        overflow: hidden !important;
+        background: #faf8ff !important;
+    }
+
+    .page_content,
+    .container,
+    .page-content-wrapper,
+    main {
+        padding: 0 !important;
+        margin: 0 !important;
+        max-width: none !important;
+        width: 100% !important;
+    }
+
+    #aiko-web-root {
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
+    }
+
+    #aiko-page-root {
+        height: 100vh !important;
+    }
+</style>
+{% endblock %}
+
+{% block page_content %}
+<div id="aiko-web-root"></div>
+{% endblock %}
+
+{% block script %}
+<script>
+    {{ script | safe }}
+
+    frappe.ready(function () {
+        if (window.AikoChatPage) {
+            AikoChatPage.init(document.getElementById('aiko-web-root'));
+        } else {
+            document.getElementById('aiko-web-root').innerHTML =
+                "<h3 style='padding:20px;color:red;'>Error: AikoChatPage failed to load.</h3>";
+        }
+    });
+</script>
+{% endblock %}
