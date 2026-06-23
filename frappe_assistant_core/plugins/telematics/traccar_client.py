@@ -4,6 +4,25 @@ Reads credentials from Fleet IoT Settings doctype.
 """
 import requests
 import frappe
+from frappe.utils import get_datetime, format_datetime, get_system_timezone
+from frappe.utils.data import convert_utc_to_timezone
+
+
+def to_local_time(utc_time_str, fmt="dd-MM-yyyy HH:mm:ss"):
+	"""
+	Convert a Traccar UTC timestamp string (e.g. '2024-06-23T08:30:00.000+0000')
+	to the site's local timezone (Asia/Kolkata) as a formatted string.
+	Returns None if input is falsy/unparseable.
+	"""
+	if not utc_time_str:
+		return None
+	try:
+		dt_utc = get_datetime(utc_time_str)
+		local_dt = convert_utc_to_timezone(dt_utc, get_system_timezone())
+		return format_datetime(local_dt, fmt)
+	except Exception:
+		frappe.log_error(f"Time conversion failed for: {utc_time_str}", "to_local_time")
+		return utc_time_str
 
 
 class TraccarClient:

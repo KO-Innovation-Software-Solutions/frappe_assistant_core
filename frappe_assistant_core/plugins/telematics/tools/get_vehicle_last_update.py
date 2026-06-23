@@ -6,7 +6,7 @@ from typing import Any, Dict
 
 import frappe
 from frappe_assistant_core.core.base_tool import BaseTool
-from frappe_assistant_core.plugins.telematics.traccar_client import TraccarClient, resolve_device_id
+from frappe_assistant_core.plugins.telematics.traccar_client import TraccarClient, resolve_device_id, to_local_time
 
 
 class GetVehicleLastUpdate(BaseTool):
@@ -48,10 +48,10 @@ class GetVehicleLastUpdate(BaseTool):
 			return {
 				"success":          True,
 				"vehicle":          vehicle,
-				"last_update":      device.get("lastUpdate"),
-				"device_time":      position.get("deviceTime"),
-				"fix_time":         position.get("fixTime"),
-				"server_time":      position.get("serverTime"),
+				"last_update":      to_local_time(device.get("lastUpdate")),
+				"device_time":      to_local_time(position.get("deviceTime")),
+				"fix_time":         to_local_time(position.get("fixTime")),
+				"server_time":      to_local_time(position.get("serverTime")),
 				"device_status":    device.get("status"),
 			}
 		except Exception as e:
