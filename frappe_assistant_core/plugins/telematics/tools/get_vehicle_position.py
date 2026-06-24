@@ -6,7 +6,7 @@ from typing import Any, Dict
 
 import frappe
 from frappe_assistant_core.core.base_tool import BaseTool
-from frappe_assistant_core.plugins.telematics.traccar_client import TraccarClient, resolve_device_id
+from frappe_assistant_core.plugins.telematics.traccar_client import TraccarClient, resolve_device_id, to_local_time
 
 
 class GetVehiclePosition(BaseTool):
@@ -67,8 +67,8 @@ class GetVehiclePosition(BaseTool):
 				"speed_kmh": round(latest.get("speed", 0) * 1.852, 2),
 				"course": latest.get("course"),
 				"address": address,
-				"fix_time": latest.get("fixTime"),
-				"server_time": latest.get("serverTime"),
+				"fix_time": to_local_time(latest.get("fixTime")),
+				"server_time": to_local_time(latest.get("serverTime")),
 				"ignition": attrs.get("ignition"),
 				"odometer_km": round(attrs["totalDistance"] / 1000, 2) if attrs.get("totalDistance") else None,
 			}

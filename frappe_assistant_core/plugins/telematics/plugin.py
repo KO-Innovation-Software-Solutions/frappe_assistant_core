@@ -29,6 +29,7 @@ class TraccarPlugin(BasePlugin):
 
 	def get_tools(self):
 		return [
+			"create_or_update_geofence",
 			"find_nearest_vehicle",
 			"get_active_alerts",
 			"get_daily_movement_report",

@@ -44,8 +44,8 @@ class FindNearestVehicle(BaseTool):
 
 		try:
 			client    = TraccarClient()
-			positions = client.get_positions()
-			devices   = {d.get("id"): d.get("name") for d in client.get_devices()}
+			positions = client.get_all_positions()
+			devices   = {d.get("id"): d.get("name") for d in client.get_all_devices()}
 
 			ranked = []
 			for p in positions:
