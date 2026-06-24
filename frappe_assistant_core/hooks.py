@@ -35,8 +35,8 @@ app_include_js = "/assets/frappe_assistant_core/js/aiko_chat.js"
 
 
 # include js, css files in header of web template
-web_include_css = "/assets/frappe_assistant_core/css/aiko_chat.css"
-web_include_js = "/assets/frappe_assistant_core/js/aiko_chat.js"
+web_include_css = "/assets/frappe_assistant_core/www/aiko_chat.css"
+web_include_js = "/assets/frappe_assistant_core/www/aiko_chat.js"
 
 
 # include custom scss in every website theme (without file extension ".scss")

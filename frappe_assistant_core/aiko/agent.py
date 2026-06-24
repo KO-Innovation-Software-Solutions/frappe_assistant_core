@@ -1,4 +1,3 @@
-import asyncio
 from typing import Optional
 import urllib.parse
 
@@ -32,16 +31,12 @@ class AikoAgent:
                 "content": (
                     "You are AIKO, an AI assistant exclusively for Kofleetz. "
                     "CRITICAL INSTRUCTIONS:\n"
-                    "1. IDENTITY: You are AIKO, built specifically for Kofleetz fleet management. "
-                    "Never describe yourself as a general AI or mention ERPNext, Frappe, or other platforms.\n"
-                    "2. TOOLS ONLY: You MUST ONLY use the provided tools to fetch real data. "
-                    "NEVER use internal knowledge to answer questions, explain concepts, or write code snippets.\n"
-                    "3. NO GREETINGS: If the user sends a greeting (e.g., 'hi', 'hello', 'how are you', 'good morning'), "
-                    "respond ONLY with: 'I am AIKO, an AI assistant for Kofleetz. I am not designed for greetings or small talk. "
-                    "Please ask me about your Kofleetz operations, such as vehicles, trips, or fleet information.'\n"
-                    "4. DATA REQUESTS: Always use the available tool to fetch real data from the Kofleetz database.\n"
-                    "5. NO CAPABILITY: If you lack a tool to fulfill a request, clearly inform the user.\n"
-                    "6. SUMMARIZE: Always summarize actual data received from tools clearly to the user."
+                    "1. Never describe yourself as a general AI or mention ERPNext, Frappe, or other platforms.\n"
+                    "2. ONLY use provided tools to fetch real data. Never use internal knowledge or generate fake/assumed data.\n"
+                    "3. If tools return no results, tell the user — never fabricate or fill in placeholder values.\n"
+                    "4. For greetings or small talk, respond only with: 'I am AIKO, an AI assistant for Kofleetz. Please ask me about your fleet operations.'\n"
+                    "5. If you lack a tool to fulfill a request, clearly inform the user.\n"
+                    "6. Always summarize tool results clearly to the user."
                 ),
             }
         ]
@@ -69,7 +64,6 @@ class AikoAgent:
                 "role": msg["role"],
                 "content": msg["content"],
             })
-            
     def _trim_history(self):
         if len(self.messages) > MAX_HISTORY_MESSAGES:
             system_prompt = self.messages[0]
@@ -115,10 +109,10 @@ class AikoAgent:
         except Exception:
             pass
 
-    async def _process_query(self, query: str) -> dict:
+    async def _process_query(self, query: str, on_stage=None, is_cancelled=None) -> dict:
         await self.connect_to_streamable_http_server()
         try:
-            result = await self.provider.process_query(query, self.session, self.messages)
+            result = await self.provider.process_query(query, self.session, self.messages, on_stage=on_stage, is_cancelled=is_cancelled)
 
             # Always expect 3-tuple: (text, messages, usage)
             final_answer, updated_messages, usage = result
@@ -138,9 +132,5 @@ class AikoAgent:
         finally:
             await self.cleanup()
 
-    def invoke(self, message: str) -> dict:
-        """
-        Synchronous wrapper for Frappe.
-        Returns a dict: {content, input_tokens, output_tokens}
-        """
-        return asyncio.run(self._process_query(message))
+    async def invoke(self, message: str, on_stage=None, is_cancelled=None) -> dict:
+        return await self._process_query(message, on_stage=on_stage, is_cancelled=is_cancelled)
