@@ -65,6 +65,9 @@ def after_migrate():
     # Install/update system prompt templates
     _install_system_prompt_templates()
 
+    # Install kofleetz_propmt_template
+    _install_kofleetz_prompt_templates()
+
     # Install/update system skills
     _install_system_skills()
 
@@ -131,6 +134,9 @@ def after_install():
 
     # Install system prompt templates
     _install_system_prompt_templates()
+
+    # Install kofleetz_propmt_template
+    _install_kofleetz_prompt_templates()
 
     # Install system skills
     _install_system_skills()
@@ -316,7 +322,9 @@ def _install_system_prompt_categories():
 
         # Load data file
         data_path = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)), "data", "system_prompt_categories.json"
+            os.path.dirname(os.path.dirname(__file__)), 
+            "data", 
+            "system_prompt_categories.json",
         )
 
         if not os.path.exists(data_path):
@@ -406,7 +414,9 @@ def _install_system_prompt_templates():
 
         # Load data file (in data/ directory to avoid Frappe's auto-import from fixtures/)
         data_path = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)), "data", "system_prompt_templates.json"
+            os.path.dirname(os.path.dirname(__file__)), 
+            "data", 
+            "system_prompt_templates.json",
         )
 
         if not os.path.exists(data_path):
@@ -503,6 +513,172 @@ def _install_system_prompt_templates():
 
     except Exception as e:
         frappe.logger("migration_hooks").error(f"Failed to install system prompt templates: {str(e)}")
+
+
+
+def _install_kofleetz_prompt_templates():
+    """
+    Install Kofleetz-specific prompt templates from data file.
+
+    Auto-creates any missing Prompt Category referenced by a template's
+    "category" field, so you never need to maintain a separate categories
+    JSON file. Just add a new template with whatever category string you
+    want in kofleetz_prompt_template.json, and on next `bench migrate`
+    both the category (if missing) and the template get created.
+
+    System templates have is_system=1 and cannot be deleted by users via UI.
+    Templates removed from the JSON file will be auto-removed from DB on
+    next migration (keeps DB in sync with source of truth = JSON file).
+    """
+    import json
+    import os
+
+    # Optional: nicer display names/icons for known category slugs.
+    # Anything not listed here still auto-creates fine, just with a
+    # title-cased name and a default icon/color.
+    CATEGORY_METADATA = {
+        "fleet": {"category_name": "Fleet", "icon": "truck", "color": "blue"},
+        "operations": {"category_name": "Operations", "icon": "activity", "color": "orange"},
+        "finance": {"category_name": "Finance", "icon": "dollar-sign", "color": "green"},
+        "logistics": {"category_name": "Logistics", "icon": "package", "color": "purple"},
+        "service": {"category_name": "Service", "icon": "tool", "color": "teal"},
+    }
+
+    def _ensure_category_exists(category_id):
+        """Create the Prompt Category if it doesn't already exist."""
+        if not category_id:
+            return
+        if frappe.db.exists("Prompt Category", category_id):
+            return
+
+        meta = CATEGORY_METADATA.get(category_id, {})
+        doc = frappe.new_doc("Prompt Category")
+        doc.category_id = category_id
+        doc.category_name = meta.get("category_name", category_id.replace("_", " ").replace("-", " ").title())
+        doc.description = meta.get("description", f"Auto-created category for '{category_id}' templates")
+        doc.icon = meta.get("icon", "folder")
+        doc.color = meta.get("color", "gray")
+        doc.is_group = 0
+        doc.flags.ignore_permissions = True
+        doc.insert()
+        frappe.logger("migration_hooks").info(f"Auto-created missing Prompt Category: {category_id}")
+
+    try:
+        if not frappe.db.table_exists("Prompt Template"):
+            frappe.logger("migration_hooks").info(
+                "Prompt Template table not yet created, skipping kofleetz prompt installation"
+            )
+            return
+
+        data_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "data",
+            "kofleetz_prompt_template.json",
+        )
+
+        if not os.path.exists(data_path):
+            frappe.logger("migration_hooks").warning(
+                f"Kofleetz prompt template data not found at {data_path}"
+            )
+            return
+
+        # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal — app-bundled seed JSON, path derived from __file__
+        with open(data_path) as f:
+            templates = json.load(f)
+
+        valid_prompt_ids = {t.get("prompt_id") for t in templates}
+
+        kofleetz_categories = {t.get("category") for t in templates if t.get("category")}
+
+        # AUTO-CREATE step: ensure every category referenced by any template exists
+        # BEFORE we try to insert/update any template (avoids LinkValidationError).
+        if frappe.db.table_exists("Prompt Category"):
+            for category_id in kofleetz_categories:
+                _ensure_category_exists(category_id)
+            frappe.db.commit()
+
+        # Clean up kofleetz system templates that are no longer in the JSON file
+        existing_kofleetz_templates = frappe.get_all(
+            "Prompt Template",
+            filters={"is_system": 1, "category": ["in", list(kofleetz_categories)]},
+            fields=["name", "prompt_id"],
+        )
+
+        deleted_count = 0
+        for existing in existing_kofleetz_templates:
+            if existing.prompt_id not in valid_prompt_ids:
+                doc = frappe.get_doc("Prompt Template", existing.name)
+                doc.flags.allow_system_delete = True
+                doc.delete(ignore_permissions=True)
+                deleted_count += 1
+                frappe.logger("migration_hooks").info(
+                    f"Removed obsolete kofleetz prompt template: {existing.prompt_id}"
+                )
+
+        created_count = 0
+        updated_count = 0
+
+        for template_data in templates:
+            prompt_id = template_data.get("prompt_id")
+
+            existing = frappe.db.get_value(
+                "Prompt Template", {"prompt_id": prompt_id, "is_system": 1}, "name"
+            )
+
+            if existing:
+                doc = frappe.get_doc("Prompt Template", existing)
+                needs_update = False
+                for field in [
+                    "title", "description", "template_content",
+                    "rendering_engine", "category", "status", "visibility",
+                ]:
+                    if template_data.get(field) is not None and doc.get(field) != template_data.get(field):
+                        doc.set(field, template_data.get(field))
+                        needs_update = True
+
+                if "arguments" in template_data:
+                    doc.arguments = []
+                    for arg_data in template_data["arguments"]:
+                        doc.append("arguments", arg_data)
+                    needs_update = True
+
+                if needs_update:
+                    doc.flags.ignore_permissions = True
+                    doc.save()
+                    updated_count += 1
+                    frappe.logger("migration_hooks").debug(f"Updated kofleetz prompt template: {prompt_id}")
+            else:
+                doc = frappe.new_doc("Prompt Template")
+                doc.prompt_id = prompt_id
+                doc.title = template_data.get("title")
+                doc.description = template_data.get("description")
+                doc.status = template_data.get("status", "Published")
+                doc.visibility = template_data.get("visibility", "Public")
+                doc.is_system = 1
+                doc.rendering_engine = template_data.get("rendering_engine", "Jinja2")
+                doc.template_content = template_data.get("template_content")
+                doc.owner_user = "Administrator"
+                doc.category = template_data.get("category")
+
+                for arg_data in template_data.get("arguments", []):
+                    doc.append("arguments", arg_data)
+
+                doc.flags.ignore_permissions = True
+                doc.insert()
+                created_count += 1
+                frappe.logger("migration_hooks").debug(f"Created kofleetz prompt template: {prompt_id}")
+
+        frappe.db.commit()
+
+        frappe.logger("migration_hooks").info(
+            f"Kofleetz prompt templates: {created_count} created, "
+            f"{updated_count} updated, {deleted_count} removed"
+        )
+
+    except Exception as e:
+        frappe.logger("migration_hooks").error(
+            f"Failed to install kofleetz prompt templates: {str(e)}"
+        )
 
 
 def _install_system_skills():
@@ -868,7 +1044,7 @@ def _sync_plugin_configurations():
             config.plugin_name = plugin_name
             config.display_name = plugin_info.display_name
             config.description = plugin_info.description
-            config.enabled = 1
+            config.enabled = is_enabled
             config.discovered_at = frappe.utils.now()
 
             config.flags.ignore_permissions = True

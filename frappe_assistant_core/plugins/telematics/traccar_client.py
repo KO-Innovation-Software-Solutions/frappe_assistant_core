@@ -4,6 +4,25 @@ Reads credentials from Fleet IoT Settings doctype.
 """
 import requests
 import frappe
+from frappe.utils import get_datetime, format_datetime, get_system_timezone
+from frappe.utils.data import convert_utc_to_timezone
+
+
+def to_local_time(utc_time_str, fmt="dd-MM-yyyy HH:mm:ss"):
+	"""
+	Convert a Traccar UTC timestamp string (e.g. '2024-06-23T08:30:00.000+0000')
+	to the site's local timezone (Asia/Kolkata) as a formatted string.
+	Returns None if input is falsy/unparseable.
+	"""
+	if not utc_time_str:
+		return None
+	try:
+		dt_utc = get_datetime(utc_time_str)
+		local_dt = convert_utc_to_timezone(dt_utc, get_system_timezone())
+		return format_datetime(local_dt, fmt)
+	except Exception:
+		frappe.log_error(f"Time conversion failed for: {utc_time_str}", "to_local_time")
+		return utc_time_str
 
 
 class TraccarClient:
@@ -135,6 +154,39 @@ class TraccarClient:
 				pass
 		return all_geofences
 
+	
+	def create_or_update_geofence(self, name, latitude, longitude, radius=100):
+		# Fetch geofences
+		res = self.session.get(f"{self.base_url}/api/geofences", timeout=15)
+
+		if res.status_code != 200:
+			frappe.throw(f"Fetch geofences failed: {res.status_code} - {res.text}")
+
+		geofences = res.json()
+
+		# Check existing
+		for geo in geofences:
+			if geo.get("name") == name:
+				return geo.get("id")
+
+		# Create new
+		payload = {
+			"name": name,
+			"area": f"CIRCLE ({latitude} {longitude}, {radius})"
+		}
+
+		res = self.session.post(
+			f"{self.base_url}/api/geofences",
+			json=payload,
+			timeout=15
+		)
+
+		if res.status_code not in (200, 201):
+			frappe.throw(f"Create geofence failed: {res.status_code} - {res.text}")
+
+		return res.json().get("id")
+
+
 	def get_all_devices(self):
 		res = self.session.get(f"{self.base_url}/api/devices", timeout=15)
 		if res.status_code != 200:
@@ -174,14 +226,11 @@ class TraccarClient:
 
 
 def resolve_device_id(vehicle: str) -> int:
-	client = TraccarClient()
-	vehicle_clean = vehicle.replace(" ", "").upper()
-	res = client.session.get(f"{client.base_url}/api/devices", timeout=15)
-	if res.status_code == 200:
-		for d in res.json():
-			if (
-				d.get("name", "").replace(" ", "").upper() == vehicle_clean
-				or d.get("uniqueId", "").replace(" ", "").upper() == vehicle_clean
-			):
-				return int(d["id"])
-	frappe.throw(f"Could not resolve Traccar device ID for vehicle: {vehicle}")
+	vehicle_doc = frappe.get_doc("Vehicle", vehicle)
+
+	if not vehicle_doc.telematics_id:
+		frappe.throw(
+			f"No telematics_id configured for vehicle: {vehicle}"
+		)
+
+	return int(vehicle_doc.telematics_id)

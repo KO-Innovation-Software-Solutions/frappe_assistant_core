@@ -6,7 +6,7 @@ from typing import Any, Dict
 
 import frappe
 from frappe_assistant_core.core.base_tool import BaseTool
-from frappe_assistant_core.plugins.telematics.traccar_client import TraccarClient, resolve_device_id
+from frappe_assistant_core.plugins.telematics.traccar_client import TraccarClient, resolve_device_id, to_local_time
 
 
 class GetVehicleLastUpdate(BaseTool):
@@ -36,22 +36,22 @@ class GetVehicleLastUpdate(BaseTool):
 		try:
 			device_id = resolve_device_id(vehicle)
 			client    = TraccarClient()
-			devices   = client.get_devices()
+			devices   = client.get_all_devices()
 			device    = next((d for d in devices if d.get("id") == device_id), None)
 
 			if not device:
 				return {"success": False, "vehicle": vehicle, "error": "Device not found"}
 
 			positions = client.get_positions(device_id=device_id)
-			position  = positions[0] if positions else {}
+			position  = positions[-1] if positions else {}  # latest position
 
 			return {
 				"success":          True,
 				"vehicle":          vehicle,
-				"last_update":      device.get("lastUpdate"),
-				"device_time":      position.get("deviceTime"),
-				"fix_time":         position.get("fixTime"),
-				"server_time":      position.get("serverTime"),
+				"last_update":      to_local_time(device.get("lastUpdate")),
+				"device_time":      to_local_time(position.get("deviceTime")),
+				"fix_time":         to_local_time(position.get("fixTime")),
+				"server_time":      to_local_time(position.get("serverTime")),
 				"device_status":    device.get("status"),
 			}
 		except Exception as e:

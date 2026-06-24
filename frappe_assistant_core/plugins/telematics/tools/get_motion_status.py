@@ -37,7 +37,7 @@ class GetMotionStatus(BaseTool):
 			device_id = resolve_device_id(vehicle)
 			client    = TraccarClient()
 			positions = client.get_positions(device_id=device_id)
-			position  = positions[0] if positions else {}
+			position  = positions[-1] if positions else {}
 			speed     = position.get("speed", 0)
 			speed_kmh = round(speed * 1.852, 2)
 			motion    = position.get("attributes", {}).get("motion", speed > 1)

@@ -35,7 +35,7 @@ class GetTopIdleVehicles(BaseTool):
 		limit     = arguments.get("limit", 5)
 		try:
 			client  = TraccarClient()
-			devices = client.get_devices()
+			devices = client.get_all_devices()
 			results = []
 
 			for d in devices:
