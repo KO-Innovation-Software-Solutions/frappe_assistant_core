@@ -1104,3 +1104,108 @@ body[data-route="aiko-chat"] .layout-main-section  { width: 100% !important; }
     pointer-events: none;
     user-select: none;
 }
+/* ── AIKO File Attachment UI ─────────────────────────────────────────────── */
+
+/* Paperclip / attach button */
+#aiko-attach-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #6366f1;
+    padding: 0;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border-radius: 50%;
+    transition: color 0.2s, background 0.2s;
+}
+#aiko-attach-btn:hover { color: #4f46e5; background: #f5f3ff; }
+
+/* File preview bar (above input) */
+.aiko-file-preview-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: #f5f3ff;
+    border-top: 1px solid #e0d9ff;
+    font-size: 12px;
+    color: #4b5563;
+}
+.aiko-file-preview-bar.hidden { display: none; }
+.aiko-file-preview-content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.aiko-file-thumb {
+    width: 36px;
+    height: 36px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+    flex-shrink: 0;
+}
+#aiko-file-remove {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 18px;
+    color: #9ca3af;
+    line-height: 1;
+    padding: 0 4px;
+    flex-shrink: 0;
+}
+#aiko-file-remove:hover { color: #ef4444; }
+
+/* DocType target bar */
+.aiko-doctype-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 12px;
+    background: #faf5ff;
+    border-top: 1px solid #e9d5ff;
+    color: #7c3aed;
+    font-size: 12px;
+}
+.aiko-doctype-bar.hidden { display: none; }
+.aiko-doctype-bar svg { flex-shrink: 0; }
+#aiko-doctype-input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    outline: none;
+    font-size: 12px;
+    color: #374151;
+}
+#aiko-doctype-input::placeholder { color: #a78bfa; }
+
+/* File preview inside a chat bubble */
+.aiko-file-msg-preview {
+    margin-bottom: 6px;
+}
+.aiko-file-thumb-msg {
+    max-width: 200px;
+    max-height: 160px;
+    border-radius: 6px;
+    border: 1px solid rgba(0,0,0,0.1);
+    display: block;
+}
+.aiko-file-msg-pdf {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #6b7280;
+    background: rgba(0,0,0,0.05);
+    border-radius: 4px;
+    padding: 4px 8px;
+}
