@@ -98,6 +98,10 @@ $(document).ready(function () {
                 </div>
 
                 <div class="aiko-chat-input-area">
+                    <input type="file" id="aiko-file-input" accept="image/*,.pdf,.png,.jpg,.jpeg,.webp" style="display:none;position:absolute;top:-9999px;" />
+                    <button id="aiko-attach-btn" title="Attach file or image">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+                    </button>
                     <textarea id="aiko-chat-input" placeholder="Ask something…" autocomplete="off" rows="1"></textarea>
                     <button id="aiko-chat-send">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
@@ -107,6 +111,16 @@ $(document).ready(function () {
                             <rect x="7" y="7" width="10" height="10" fill="currentColor" stroke="none"></rect>
                         </svg>
                     </button>
+                </div>
+
+                <div id="aiko-file-preview-bar" style="display:none;">
+                    <div id="aiko-file-preview-content"></div>
+                    <button id="aiko-file-remove" title="Remove">&times;</button>
+                </div>
+
+                <div id="aiko-doctype-bar" style="display:none;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                    <input type="text" id="aiko-doctype-input" placeholder="DocType to update (e.g. Sales Invoice, SI-0001)" autocomplete="off" />
                 </div>
             </div>
         </div>
@@ -120,16 +134,92 @@ $(document).ready(function () {
         $('#aiko-chat-input').focus();
     });
 
+    // ── FILE PREVIEW / DOCTYPE BARS (inline style overrides) ─────────────
+    $('#aiko-attach-btn').css({
+        'display':         'inline-flex',
+        'align-items':     'center',
+        'justify-content': 'center',
+        'width':           '36px',
+        'height':          '36px',
+        'min-width':       '36px',
+        'padding':         '0',
+        'margin':          '0',
+        'border':          'none',
+        'border-radius':   '50%',
+        'background':      'none',
+        'cursor':          'pointer',
+        'color':           '#6366f1',
+        'flex-shrink':     '0'
+    });
+    $('#aiko-file-preview-bar').css({
+        'flex':           '0 0 auto',
+        'display':        'none',
+        'flex-direction': 'row',
+        'align-items':    'center',
+        'gap':            '8px',
+        'padding':        '6px 12px',
+        'background':     '#f5f3ff',
+        'border-top':     '1px solid #e0d9ff',
+        'font-size':      '12px',
+        'color':          '#4b5563'
+    });
+    $('#aiko-file-preview-content').css({
+        'display':       'flex',
+        'align-items':   'center',
+        'gap':           '8px',
+        'flex':          '1',
+        'overflow':      'hidden',
+        'white-space':   'nowrap',
+        'text-overflow': 'ellipsis'
+    });
+    $('#aiko-file-remove').css({
+        'background':  'none',
+        'border':      'none',
+        'cursor':      'pointer',
+        'font-size':   '20px',
+        'color':       '#9ca3af',
+        'line-height': '1',
+        'padding':     '0 4px',
+        'flex-shrink': '0'
+    });
+    $('#aiko-doctype-bar').css({
+        'flex':           '0 0 auto',
+        'display':        'none',
+        'flex-direction': 'row',
+        'align-items':    'center',
+        'gap':            '8px',
+        'padding':        '4px 12px',
+        'background':     '#faf5ff',
+        'border-top':     '1px solid #e9d5ff',
+        'color':          '#7c3aed',
+        'font-size':      '12px'
+    });
+    $('#aiko-doctype-input').css({
+        'flex':       '1',
+        'border':     'none',
+        'background': 'transparent',
+        'outline':    'none',
+        'font-size':  '12px',
+        'color':      '#374151'
+    });
+
     // ── STATE ─────────────────────────────────────────────────────────────
-    let thread_id          = frappe.utils.get_random(10);
-    let isThinking         = false;
-    let currentSessionName = null;
-    let currentRequestId   = null;
-    let hasAutoLoaded      = false;
-    let messageCount       = 0;
-    let abortedRequests    = new Set();
-    let responseStopped       = false;
-    let pendingXhr         = null;
+    let thread_id              = frappe.utils.get_random(10);
+    let isThinking             = false;
+    let currentSessionName     = null;
+    let currentRequestId       = null;
+    let hasAutoLoaded          = false;
+    let messageCount           = 0;
+    let abortedRequests        = new Set();
+    let responseStopped        = false;
+    let pendingXhr             = null;
+    // File attachment state
+    let attachedFile           = null;
+    let attachedFileDataUrl    = null;
+    // Pagination state
+    let oldestMessageCreation  = null;
+    let hasMoreMessages        = false;
+    let isLoadingOlder         = false;
 
     // ── WIDGET VISIBILITY ─────────────────────────────────────────────────
     function syncWidgetVisibility() {
@@ -341,11 +431,14 @@ $(document).ready(function () {
     $('#aiko-new-chat-btn').on('click', function () { startNewChat(); });
 
     function startNewChat() {
-        thread_id          = frappe.utils.get_random(10);
-        currentSessionName = null;
-        currentRequestId   = null;
-        messageCount       = 0;
+        thread_id             = frappe.utils.get_random(10);
+        currentSessionName    = null;
+        currentRequestId      = null;
+        messageCount          = 0;
         abortedRequests.clear();
+        oldestMessageCreation = null;
+        hasMoreMessages       = false;
+        clearAttachment();
 
         $('#aiko-limit-banner').remove();
         $('#aiko-chat-send').prop('disabled', false);
@@ -420,8 +513,10 @@ $(document).ready(function () {
     // ── LOAD SESSION ──────────────────────────────────────────────────────
     function loadSession(sessionName, sessionThreadId) {
         hideSessionsPanel();
-        currentSessionName = sessionName;
-        thread_id          = sessionThreadId;
+        currentSessionName    = sessionName;
+        thread_id             = sessionThreadId;
+        oldestMessageCreation = null;
+        hasMoreMessages       = false;
         $('#aiko-chat-messages').html('<div class="aiko-sessions-loading" id="aiko-msg-loading">Loading messages…</div>');
 
         frappe.call({
@@ -433,11 +528,22 @@ $(document).ready(function () {
 
                 if (r.message && r.message.success) {
                     const msgs = r.message.messages;
+                    hasMoreMessages = r.message.has_more || false;
+
+                    if (hasMoreMessages) {
+                        $('#aiko-chat-messages').prepend(`
+                            <div id="aiko-load-more" class="aiko-load-more">
+                                <button id="aiko-load-more-btn">Load older messages</button>
+                            </div>`);
+                        bindLoadMoreBtn();
+                    }
+
                     if (msgs.length === 0) {
                         showEmptyState();
                     } else {
                         messageCount = 0;
-                        msgs.forEach(function (m) { appendMessage(m.role, m.content, false, m.creation); });
+                        msgs.forEach(function (m) { appendMessage(m.role, m.content || '', false, m.creation); });
+                        oldestMessageCreation = msgs[0].creation;
                         checkMessageLimit();
                         scrollToBottom();
                     }
@@ -452,8 +558,53 @@ $(document).ready(function () {
         });
     }
 
+    // ── LOAD OLDER MESSAGES ───────────────────────────────────────────────
+    function bindLoadMoreBtn() {
+        $('#aiko-chat-messages').off('click', '#aiko-load-more-btn').on('click', '#aiko-load-more-btn', function () {
+            loadOlderMessages();
+        });
+    }
+
+    function loadOlderMessages() {
+        if (!currentSessionName || !hasMoreMessages || isLoadingOlder) return;
+        isLoadingOlder = true;
+        const btn = $('#aiko-load-more-btn');
+        btn.text('Loading...').prop('disabled', true);
+
+        frappe.call({
+            method: 'frappe_assistant_core.api.assistant_api.get_session_messages',
+            args: { session_name: currentSessionName, limit: 20, before_creation: oldestMessageCreation },
+            callback: function (r) {
+                isLoadingOlder = false;
+                btn.text('Load older messages').prop('disabled', false);
+                if (r.message && r.message.success) {
+                    const msgs = r.message.messages;
+                    hasMoreMessages = r.message.has_more || false;
+                    if (msgs.length > 0) {
+                        const container = $('#aiko-chat-messages')[0];
+                        const prevScrollHeight = container.scrollHeight;
+                        msgs.forEach(function (m) {
+                            $('#aiko-load-more').after(buildMessageHtml(m.role, m.content || '', m.creation));
+                        });
+                        container.scrollTop = container.scrollHeight - prevScrollHeight;
+                        oldestMessageCreation = msgs[0].creation;
+                    }
+                    if (!hasMoreMessages) { $('#aiko-load-more').remove(); }
+                }
+            },
+            error: function () {
+                isLoadingOlder = false;
+                btn.text('Load older messages').prop('disabled', false);
+            }
+        });
+    }
+
     // ── MARKDOWN RENDERER ─────────────────────────────────────────────────
     function renderMarkdown(text) {
+        if (text == null) return '';
+        text = String(text);
+        // Strip hidden context comment injected by the backend — never show it
+        text = text.replace(/\n*<!--\s*AIKO_PENDING:[\s\S]*?-->/g, '').trimEnd();
         text = text.replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '');
 
         const codeBlocks = [];
@@ -548,6 +699,7 @@ $(document).ready(function () {
 
     // ── MESSAGE BUILDING ──────────────────────────────────────────────────
     function buildMessageHtml(role, text, creation) {
+        if (text == null) text = '';
         let content = (role === 'assistant') ? renderMarkdown(text) : escapeHtml(text);
         const time  = formatTimestamp(creation);
         const copyBtn = (role === 'assistant')
@@ -725,7 +877,7 @@ $(document).ready(function () {
         });
         messageCount++;
         checkMessageLimit();
-            });
+    });
 
     // ── MESSAGE LIMIT ─────────────────────────────────────────────────────
     function checkMessageLimit() {
@@ -745,35 +897,147 @@ $(document).ready(function () {
         }
     }
 
+    // ── FILE ATTACHMENT ───────────────────────────────────────────────────
+    $('#aiko-attach-btn').on('click', function () {
+        if (isThinking) return;
+        $('#aiko-file-input').val('').trigger('click');
+    });
+
+    $('#aiko-file-input').on('change', function () {
+        const file = this.files[0];
+        if (!file) return;
+        const isImage = file.type.startsWith('image/');
+        const isPdf   = file.type === 'application/pdf';
+        if (!isImage && !isPdf) {
+            frappe.msgprint('Only images (JPG, PNG, WEBP) and PDFs are supported.');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = function (e) {
+            const dataUrl = e.target.result;
+            const base64  = dataUrl.split(',')[1];
+            attachedFile = { name: file.name, type: file.type, base64: base64, isImage: isImage };
+            attachedFileDataUrl = dataUrl;
+
+            let previewHtml = '';
+            if (isImage) {
+                previewHtml = `<img src="${dataUrl}" style="width:32px;height:32px;object-fit:cover;border-radius:4px;border:1px solid #ddd;flex-shrink:0;" /> <span style="overflow:hidden;text-overflow:ellipsis;">${escapeHtml(file.name)}</span>`;
+            } else {
+                previewHtml = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>&nbsp;<span>${escapeHtml(file.name)}</span>`;
+            }
+            $('#aiko-file-preview-content').html(previewHtml);
+            $('#aiko-file-preview-bar').css('display', 'flex');
+            $('#aiko-doctype-bar').css('display', 'flex');
+            $('#aiko-chat-input').attr('placeholder', 'Describe what to do with this file…');
+        };
+        reader.readAsDataURL(file);
+    });
+
+    $('#aiko-file-remove').on('click', function () { clearAttachment(); });
+
+    function clearAttachment() {
+        attachedFile        = null;
+        attachedFileDataUrl = null;
+        $('#aiko-file-preview-bar').hide();
+        $('#aiko-doctype-bar').hide();
+        $('#aiko-doctype-input').val('');
+        $('#aiko-file-input').val('');
+        $('#aiko-chat-input').attr('placeholder', 'Ask something…');
+    }
+
     // ── SEND ──────────────────────────────────────────────────────────────
     function sendMessage() {
         if (isThinking) return;
         const input = $('#aiko-chat-input');
         const text  = input.val().trim();
-        if (!text) return;
+        if (!text && !attachedFile) return;
+
+        const userText     = text || 'Analyze this file.';
+        const fileSnapshot = attachedFile ? Object.assign({}, attachedFile) : null;
+        const fileDataUrl  = attachedFileDataUrl;
 
         input.val('').css('height', 'auto');
-        appendMessage('user', text);
+
+        // Build user bubble
+        if (fileSnapshot) {
+            let filePreview = '';
+            if (fileSnapshot.isImage) {
+                filePreview = `<img src="${fileDataUrl}" style="max-width:180px;max-height:140px;border-radius:6px;border:1px solid rgba(0,0,0,0.1);display:block;margin-bottom:6px;" />`;
+            } else {
+                filePreview = `<div style="display:flex;align-items:center;gap:6px;font-size:12px;background:rgba(0,0,0,0.06);border-radius:4px;padding:4px 8px;margin-bottom:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>${escapeHtml(fileSnapshot.name)}</div>`;
+            }
+            const time = formatTimestamp();
+            $('#aiko-chat-messages').find('.aiko-empty-state').remove();
+            $('#aiko-chat-messages').append(`
+                <div class="aiko-message user">
+                    <div class="aiko-message-inner">
+                        <div class="aiko-bubble">
+                            ${filePreview}
+                            ${escapeHtml(userText)}
+                        </div>
+                        <div class="aiko-message-footer">
+                            <span class="aiko-timestamp">${time}</span>
+                        </div>
+                    </div>
+                </div>`);
+            messageCount++;
+            if (!isScrolledUp) scrollToBottom();
+        } else {
+            appendMessage('user', userText);
+        }
+
         currentRequestId = frappe.utils.get_random(10);
-        responseStopped = false;
+        responseStopped  = false;
         showThinking();
 
-        frappe.call({
-            method: 'frappe_assistant_core.aiko.api.chat',
-            args: { message: text, thread_id: thread_id, request_id: currentRequestId },
-            callback: function (r) {
-                if (!r.message || !r.message.success) {
+        if (fileSnapshot) {
+            const doctypeTarget = $('#aiko-doctype-input').val().trim();
+            clearAttachment();
+            // File chat uses a queued background job — the response comes via aiko_done realtime event
+            frappe.call({
+                method: 'frappe_assistant_core.aiko.api.chat_with_file',
+                args: {
+                    message:        userText,
+                    thread_id:      thread_id,
+                    request_id:     currentRequestId,
+                    file_name:      fileSnapshot.name,
+                    file_type:      fileSnapshot.type,
+                    file_data:      fileSnapshot.base64,
+                    doctype_target: doctypeTarget || '',
+                },
+                timeout: 30,   // just waits for queue acknowledgement, not the full response
+                callback: function (r) {
+                    if (!r.message || !r.message.success) {
+                        if (!isThinking) return;
+                        removeThinking();
+                        appendMessage('assistant', 'Could not start the file request. Please try again.');
+                    }
+                    // Success path: response comes via aiko_done realtime event
+                },
+                error: function () {
                     if (!isThinking) return;
                     removeThinking();
-                    appendMessage('assistant', 'Could not start the request. Please try again.');
+                    appendMessage('assistant', 'Network error or server unavailable.');
                 }
-            },
-            error: function () {
-                if (!isThinking) return;
-                removeThinking();
-                appendMessage('assistant', 'Network error or server unavailable.');
-            }
-        });
+            });
+        } else {
+            frappe.call({
+                method: 'frappe_assistant_core.aiko.api.chat',
+                args: { message: userText, thread_id: thread_id, request_id: currentRequestId },
+                callback: function (r) {
+                    if (!r.message || !r.message.success) {
+                        if (!isThinking) return;
+                        removeThinking();
+                        appendMessage('assistant', 'Could not start the request. Please try again.');
+                    }
+                },
+                error: function () {
+                    if (!isThinking) return;
+                    removeThinking();
+                    appendMessage('assistant', 'Network error or server unavailable.');
+                }
+            });
+        }
     }
 
     $('#aiko-chat-input').on('keydown', function (e) {
@@ -789,10 +1053,11 @@ $(document).ready(function () {
 
     // ── REALTIME LISTENERS ────────────────────────────────────────────────
     frappe.realtime.on('aiko_stage', function (data) {
+        const d = (data && data.message) ? data.message : data;
         if (!isThinking) return;
-        if (data.thread_id  !== thread_id)        return;
-        if (data.request_id !== currentRequestId) return;
-        updateThinkingStage(data.stage);
+        if (d.thread_id  !== thread_id)        return;
+        if (d.request_id !== currentRequestId) return;
+        updateThinkingStage(d.stage);
     });
 
     function showResponseNotification(previewText) {
@@ -812,31 +1077,33 @@ $(document).ready(function () {
         $('#aiko-notif-badge').hide().removeClass('visible');
         $('#aiko-toast').fadeOut(200);
     }
+
     frappe.realtime.on('aiko_done', function (data) {
-        if (data.thread_id !== thread_id) return;
+        const d = (data && data.message) ? data.message : data;
+        if (d.thread_id !== thread_id) return;
         if (responseStopped) {
             responseStopped = false;
             return;
         }
-        if (abortedRequests.has(data.request_id)) {
-            abortedRequests.delete(data.request_id);
+        if (abortedRequests.has(d.request_id)) {
+            abortedRequests.delete(d.request_id);
             return;
         }
-        if (abortedRequests.has('thread:' + data.thread_id)) {
-            abortedRequests.delete('thread:' + data.thread_id);
+        if (abortedRequests.has('thread:' + d.thread_id)) {
+            abortedRequests.delete('thread:' + d.thread_id);
             return;
         }
-        if (currentRequestId && data.request_id !== currentRequestId) return;
+        if (currentRequestId && d.request_id !== currentRequestId) return;
         removeThinking();
-        if (data.success) {
-            appendMessage('assistant', data.data);
-            if (data.session_name && !currentSessionName) {
-                currentSessionName = data.session_name;
+        if (d.success) {
+            appendMessage('assistant', d.data);
+            if (d.session_name && !currentSessionName) {
+                currentSessionName = d.session_name;
             }
-            showResponseNotification(data.data);
+            showResponseNotification(d.data);
             checkMessageLimit();
         } else {
-            appendMessage('assistant', data.error || 'An error occurred.');
+            appendMessage('assistant', d.error || 'An error occurred.');
         }
     });
 });
