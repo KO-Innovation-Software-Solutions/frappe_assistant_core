@@ -161,7 +161,7 @@ class OllamaProvider:
         usage = {"input_tokens": total_input_tokens, "output_tokens": total_output_tokens}
         return final_answer, messages, usage
 
-    async def process_query(self, query: str, session, messages: list) -> tuple:
+    async def process_query(self, query: str, session, messages: list, on_stage=None) -> tuple:
         """Entry point for plain text queries."""
         tools = await self._get_tools(session)
         messages.append({"role": "user", "content": query})
