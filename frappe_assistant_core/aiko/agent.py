@@ -1,18 +1,15 @@
 from typing import Optional
 import urllib.parse
-
 import frappe
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 from frappe.utils import get_url
-
 from .providers import OpenAIProvider, OllamaProvider
-
+from frappe_assistant_core.aiko.file_chat.api import chat_with_file, run_file_chat_job_sync as run_file_chat_job_sync  # noqa: F401, E501
 MAX_HISTORY_MESSAGES = 20
 
 class AikoAgent:
     """Unified MCP Agent for Frappe"""
-
     def __init__(self, thread_id: str):
         self.thread_id = thread_id
         self.settings = frappe.get_single("Assistant Core Settings")
@@ -24,7 +21,6 @@ class AikoAgent:
         self.session: Optional[ClientSession] = None
         self._streams_context = None
         self._session_context = None
-
         self.messages = [
             {
                 "role": "system",
@@ -58,7 +54,6 @@ class AikoAgent:
             order_by="creation asc",
             limit=MAX_HISTORY_MESSAGES,
         )
-
         for msg in past_messages:
             self.messages.append({
                 "role": msg["role"],
@@ -75,7 +70,6 @@ class AikoAgent:
         user_doc = frappe.get_doc("User", user)
         api_key = user_doc.api_key
         api_secret = user_doc.get_password("api_secret")
-
         mcp_url = get_url("/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp")
         parsed = urllib.parse.urlparse(mcp_url)
         internal_url = mcp_url.replace(parsed.hostname, "127.0.0.1")
@@ -83,12 +77,10 @@ class AikoAgent:
             internal_url = internal_url.replace(
                 "127.0.0.1", f"127.0.0.1:{frappe.conf.webserver_port or 8000}"
             )
-
         headers = {
             "Authorization": f"token {api_key}:{api_secret}",
             "Host": parsed.hostname,
         }
-
         self._streams_context = streamablehttp_client(url=internal_url, headers=headers)
         read_stream, write_stream, _ = await self._streams_context.__aenter__()
 
@@ -96,7 +88,6 @@ class AikoAgent:
         self.session = await self._session_context.__aenter__()
 
         await self.session.initialize()
-
     async def cleanup(self):
         try:
             if self._session_context:
@@ -113,17 +104,11 @@ class AikoAgent:
         await self.connect_to_streamable_http_server()
         try:
             result = await self.provider.process_query(query, self.session, self.messages, on_stage=on_stage, is_cancelled=is_cancelled)
-
-            # Always expect 3-tuple: (text, messages, usage)
             final_answer, updated_messages, usage = result
-
-            # Guard against empty response
             if not final_answer:
                 final_answer = "I'm sorry, I couldn't generate a response. Please try again."
-
             self.messages = updated_messages
             self._trim_history()
-
             return {
                 "content": final_answer,
                 "input_tokens": usage.get("input_tokens", 0),
