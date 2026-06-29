@@ -99,6 +99,14 @@ $(document).ready(function () {
 
                 <div class="aiko-chat-input-area">
                     <textarea id="aiko-chat-input" placeholder="Ask something…" autocomplete="off" rows="1"></textarea>
+                    <button id="aiko-mic-btn" class="aiko-mic-btn" title="Voice input">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                            <line x1="12" y1="19" x2="12" y2="23"></line>
+                            <line x1="8" y1="23" x2="16" y2="23"></line>
+                        </svg>
+                    </button>
                     <button id="aiko-chat-send">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
                     </button>
@@ -113,6 +121,9 @@ $(document).ready(function () {
     `;
 
     $('body').append(chatHtml);
+    console.log("Widget Added");
+    console.log(document.getElementById("aiko-mic-btn"));
+    console.log(document.getElementById("aiko-chat-send"));
     $('body').append('<div id="aiko-toast"></div>');
     $('#aiko-toast').on('click', function () {
         $('#aiko-chat-window').show();
@@ -839,4 +850,69 @@ $(document).ready(function () {
             appendMessage('assistant', data.error || 'An error occurred.');
         }
     });
+
+// ── VOICE INPUT (live Web Speech API) ───────────────────────────────────
+    function initVoiceInput() {
+        const micBtn = document.getElementById('aiko-mic-btn');
+        const chatInput = document.getElementById('aiko-chat-input');
+        if (!micBtn || !chatInput) return;
+
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            micBtn.style.display = 'none';
+            return;
+        }
+
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'en-IN';
+
+        let isListening = false;
+        let baseText = '';
+
+        recognition.onresult = (event) => {
+            let finalText = '';
+            let interimText = '';
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                const transcript = event.results[i][0].transcript;
+                if (event.results[i].isFinal) finalText += transcript;
+                else interimText += transcript;
+            }
+            if (finalText) baseText += finalText;
+            chatInput.value = (baseText + interimText).trim();
+            chatInput.style.height = 'auto';
+            chatInput.style.height = Math.min(chatInput.scrollHeight, 100) + 'px';
+        };
+
+        recognition.onerror = (e) => {
+            console.error('Speech recognition error:', e.error);
+            if (e.error === 'not-allowed') {
+                frappe.show_alert({ message: 'Microphone access denied', indicator: 'red' });
+            }
+            isListening = false;
+            micBtn.classList.remove('recording');
+        };
+
+        recognition.onend = () => {
+            isListening = false;
+            micBtn.classList.remove('recording');
+        };
+
+        micBtn.addEventListener('click', () => {
+            if (isListening) {
+                recognition.stop();
+                return;
+            }
+            baseText = chatInput.value ? chatInput.value + ' ' : '';
+            isListening = true;
+            micBtn.classList.add('recording');
+            recognition.start();
+        });
+    }
+
+    initVoiceInput();
+    
 });
+
+
