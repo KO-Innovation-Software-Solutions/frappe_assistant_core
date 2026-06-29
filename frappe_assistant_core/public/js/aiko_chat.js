@@ -995,7 +995,7 @@ $(document).ready(function () {
             clearAttachment();
             // File chat uses a queued background job — the response comes via aiko_done realtime event
             frappe.call({
-                method: 'frappe_assistant_core.aiko.api.chat_with_file',
+                method: 'frappe_assistant_core.aiko.file_chat.api.chat_with_file',
                 args: {
                     message:        userText,
                     thread_id:      thread_id,
