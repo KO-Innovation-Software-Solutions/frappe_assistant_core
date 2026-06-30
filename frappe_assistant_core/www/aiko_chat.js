@@ -71,6 +71,8 @@ window.AikoChatPage = {
         let sidebarVisible        = window.innerWidth > 900;
         let abortedRequests       = new Set();
         let responseStopped       = false;
+        let attachedFile          = null;
+        let isUploadingFile       = false;
 
         // ── HELPERS ───────────────────────────────────────────────────────
         function formatTimestamp(dateStr) {
@@ -96,6 +98,25 @@ window.AikoChatPage = {
             return String(str)
                 .replace(/&/g, '&amp;').replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        // Recovers { text, attachment } from a saved message that may contain
+        // the hidden "[System note: ...]" file instruction we embed on send.
+        function stripFileNote(content) {
+            content = content || '';
+            const re = /\[System note: The user has attached a file named "([^"]*)" available at (\S+)\. Use the appropriate tool[^\]]*\]/;
+            const match = content.match(re);
+            if (!match) return { text: content, attachment: null };
+
+            const fileName = match[1];
+            const fileUrl  = match[2];
+            let text = content.replace(re, '').trim();
+            text = text.replace(/^The user sent a file with no additional message\.\s*/i, '').trim();
+
+            return {
+                text,
+                attachment: { file_url: fileUrl, file_name: fileName, is_image: isImageFile(fileName) }
+            };
         }
 
         function sessionDisplayTitle(s) {
@@ -155,7 +176,12 @@ window.AikoChatPage = {
 
                     <!-- INPUT -->
                     <div class="aiko-page-input-area">
+                        <div id="aiko-page-attach-preview" class="aiko-attach-preview hidden"></div>
                         <div class="aiko-input-wrapper">
+                            <input type="file" id="aiko-page-file-input" style="display:none;" />
+                            <button class="aiko-icon-btn aiko-attach-btn" id="aiko-page-attach-btn" type="button" title="Attach file">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+                            </button>
                             <textarea class="aiko-page-textarea" id="aiko-page-input" placeholder="Ask AIKO anything…" rows="1"></textarea>
                             <button class="aiko-page-stop-btn" id="aiko-page-stop-btn" title="Stop generating" style="display: none;">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
@@ -329,7 +355,10 @@ window.AikoChatPage = {
                         if (msgs.length === 0) {
                             showEmptyState();
                         } else {
-                            msgs.forEach(function (m) { appendPageMessage(m.role, m.content, false, m.creation); });
+                            msgs.forEach(function (m) {
+                                const parsed = stripFileNote(m.content);
+                                appendPageMessage(m.role, parsed.text, false, m.creation, parsed.attachment);
+                            });
                             messageCount = msgs.length;
                             checkMessageLimit();
                             pageScrollToBottom();
@@ -549,9 +578,25 @@ window.AikoChatPage = {
             return html;
         }
 
-        function buildPageMessageHtml(role, text, creation) {
+        function buildPageAttachmentHtml(attachment) {
+            if (!attachment) return '';
+            if (attachment.is_image) {
+                return `<div class="aiko-msg-attachment">
+                    <img class="aiko-msg-attachment-img" src="${attachment.file_url}" alt="${escapeHtml(attachment.file_name || '')}" onclick="window.open('${attachment.file_url}', '_blank')">
+                </div>`;
+            }
+            return `<div class="aiko-msg-attachment">
+                <a class="aiko-msg-file-card" href="${attachment.file_url}" target="_blank" rel="noopener">
+                    <span class="aiko-msg-file-icon">${fileIconSvg()}</span>
+                    <span class="aiko-msg-file-name">${escapeHtml(attachment.file_name || 'File')}</span>
+                </a>
+            </div>`;
+        }
+
+        function buildPageMessageHtml(role, text, creation, attachment) {
             let content = (role === 'assistant') ? renderMarkdown(text) : escapeHtml(text);
             const time = formatTimestamp(creation);
+            const attachmentHtml = buildPageAttachmentHtml(attachment);
 
             const copyBtn = (role === 'assistant')
                 ? `<button class="aiko-copy-btn" data-text="${escapeHtml(text)}">
@@ -566,9 +611,10 @@ window.AikoChatPage = {
             return `
                 <div class="aiko-message ${role}">
                     <div class="aiko-message-inner">
-                        <div class="aiko-bubble">
+                        ${attachmentHtml}
+                        ${text ? `<div class="aiko-bubble">
                             ${content}
-                        </div>
+                        </div>` : ''}
                         <div class="aiko-message-footer">
                             <span class="aiko-timestamp">${time}</span>
                             ${copyBtn}
@@ -577,10 +623,10 @@ window.AikoChatPage = {
                 </div>`;
         }
 
-        function appendPageMessage(role, text, doScroll, creation) {
+        function appendPageMessage(role, text, doScroll, creation, attachment) {
             if (doScroll === undefined) doScroll = true;
             $messages.find('.aiko-empty-state').remove();
-            $messages.append(buildPageMessageHtml(role, text, creation));
+            $messages.append(buildPageMessageHtml(role, text, creation, attachment));
             if (doScroll) {
                 if (isScrolledUp) {
                     $('#aiko-page-scroll-label').text('New message ↓');
@@ -736,24 +782,120 @@ window.AikoChatPage = {
             this.style.height = Math.min(this.scrollHeight, 160) + 'px';
         });
 
+        // ── ATTACH FILE ──────────────────────────────────────────────────
+        function isImageFile(name) {
+            return /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(name || '');
+        }
+
+        function fileIconSvg() {
+            return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>`;
+        }
+
+        function renderPageAttachPreview() {
+            const $box = $('#aiko-page-attach-preview');
+            if (isUploadingFile) {
+                $box.removeClass('hidden').html(`
+                    <div class="aiko-attach-chip aiko-attach-uploading">
+                        <div class="aiko-attach-spinner"></div>
+                        <span class="aiko-attach-name">Uploading…</span>
+                    </div>`);
+                return;
+            }
+            if (!attachedFile) { $box.addClass('hidden').html(''); return; }
+
+            const thumb = attachedFile.is_image
+                ? `<img class="aiko-attach-thumb" src="${attachedFile.file_url}" alt="">`
+                : `<div class="aiko-attach-file-icon">${fileIconSvg()}</div>`;
+
+            $box.removeClass('hidden').html(`
+                <div class="aiko-attach-chip">
+                    ${thumb}
+                    <span class="aiko-attach-name" title="${escapeHtml(attachedFile.file_name)}">${escapeHtml(attachedFile.file_name)}</span>
+                    <button class="aiko-attach-remove" id="aiko-page-attach-remove" title="Remove">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    </button>
+                </div>`);
+        }
+
+        $('#aiko-page-attach-preview').on('click', '#aiko-page-attach-remove', function () {
+            attachedFile = null;
+            renderPageAttachPreview();
+        });
+
+        $('#aiko-page-attach-btn').on('click', function () {
+            if (isUploadingFile) return;
+            $('#aiko-page-file-input').val('').trigger('click');
+        });
+
+        $('#aiko-page-file-input').on('change', function (e) {
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
+
+            isUploadingFile = true;
+            renderPageAttachPreview();
+
+            const formData = new FormData();
+            formData.append('file', file, file.name);
+            formData.append('is_private', 0);
+
+            $.ajax({
+                url: '/api/method/upload_file',
+                type: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                headers: { 'X-Frappe-CSRF-Token': frappe.csrf_token },
+                success: function (res) {
+                    const msg = res.message || {};
+                    attachedFile = {
+                        file_url:  msg.file_url,
+                        file_name: msg.file_name || file.name,
+                        is_image:  isImageFile(msg.file_name || file.name)
+                    };
+                    isUploadingFile = false;
+                    renderPageAttachPreview();
+                },
+                error: function () {
+                    isUploadingFile = false;
+                    attachedFile = null;
+                    renderPageAttachPreview();
+                    frappe.show_alert({ message: 'File upload failed.', indicator: 'red' });
+                }
+            });
+        });
+
         // ── SEND ──────────────────────────────────────────────────────────
         function sendPageMessage() {
-            if (isThinking) return;
+            if (isThinking || isUploadingFile) return;
             const $input = $('#aiko-page-input');
             const text   = $input.val().trim();
-            if (!text) return;
+            if (!text && !attachedFile) return;
 
+            const sentAttachment = attachedFile;
             $input.val('').css('height', 'auto');
-            appendPageMessage('user', text);
+            appendPageMessage('user', text, true, null, sentAttachment);
+            attachedFile = null;
+            renderPageAttachPreview();
             // FIX #5: reset currentRequestId before each new send so stale
             // abort state from a prior request cannot bleed into this one
             currentRequestId = frappe.utils.get_random(10);
             responseStopped = false;
             showPageThinking();
 
+            let outgoingText = text;
+            if (sentAttachment) {
+                const fullUrl = sentAttachment.file_url.startsWith('/')
+                    ? (window.location.origin + sentAttachment.file_url)
+                    : sentAttachment.file_url;
+                const fileNote = `[System note: The user has attached a file named "${sentAttachment.file_name}" available at ${fullUrl}. Use the appropriate tool to read/extract its contents before answering, then respond based on what it contains.]`;
+                outgoingText = text ? `${text}\n\n${fileNote}` : `The user sent a file with no additional message.\n\n${fileNote}`;
+            }
+
+            const callArgs = { message: outgoingText, thread_id: thread_id, request_id: currentRequestId };
+
             pendingXhr = frappe.call({
                 method: 'frappe_assistant_core.aiko.api.chat',
-                args: { message: text, thread_id: thread_id, request_id: currentRequestId },
+                args: callArgs,
                 callback: function (r) {
                     // This only confirms the job was queued — the real answer
                     // arrives via the 'aiko_done' realtime event.
