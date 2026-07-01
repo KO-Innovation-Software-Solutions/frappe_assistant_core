@@ -97,7 +97,13 @@ $(document).ready(function () {
                     <span id="aiko-scroll-label">↓</span>
                 </div>
 
+                <div id="aiko-attach-preview" class="aiko-attach-preview hidden"></div>
+
                 <div class="aiko-chat-input-area">
+                    <input type="file" id="aiko-file-input" style="display:none;" />
+                    <button id="aiko-attach-btn" type="button" title="Attach file">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+                    </button>
                     <textarea id="aiko-chat-input" placeholder="Ask something…" autocomplete="off" rows="1"></textarea>
                     <button id="aiko-mic-btn" class="aiko-mic-btn" title="Voice input">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -138,6 +144,8 @@ $(document).ready(function () {
     let abortedRequests    = new Set();
     let responseStopped       = false;
     let pendingXhr         = null;
+    let attachedFile       = null; // { file_url, file_name, file_type, is_image }
+    let isUploadingFile    = false;
 
     // ── WIDGET VISIBILITY ─────────────────────────────────────────────────
     function syncWidgetVisibility() {
@@ -234,6 +242,25 @@ $(document).ready(function () {
         return String(str)
             .replace(/&/g, '&amp;').replace(/</g, '&lt;')
             .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // Recovers { text, attachment } from a saved message that may contain
+    // the hidden "[System note: ...]" file instruction we embed on send.
+    function stripFileNote(content) {
+        content = content || '';
+        const re = /\[System note: The user has attached a file named "([^"]*)" available at (\S+)\. Use the appropriate tool[^\]]*\]/;
+        const match = content.match(re);
+        if (!match) return { text: content, attachment: null };
+
+        const fileName = match[1];
+        const fileUrl  = match[2];
+        let text = content.replace(re, '').trim();
+        text = text.replace(/^The user sent a file with no additional message\.\s*/i, '').trim();
+
+        return {
+            text,
+            attachment: { file_url: fileUrl, file_name: fileName, is_image: isImageFile(fileName) }
+        };
     }
 
     function sessionDisplayTitle(s) {
@@ -445,7 +472,10 @@ $(document).ready(function () {
                         showEmptyState();
                     } else {
                         messageCount = 0;
-                        msgs.forEach(function (m) { appendMessage(m.role, m.content, false, m.creation); });
+                        msgs.forEach(function (m) {
+                            const parsed = stripFileNote(m.content);
+                            appendMessage(m.role, parsed.text, false, m.creation, parsed.attachment);
+                        });
                         checkMessageLimit();
                         scrollToBottom();
                     }
@@ -555,9 +585,25 @@ $(document).ready(function () {
     }
 
     // ── MESSAGE BUILDING ──────────────────────────────────────────────────
-    function buildMessageHtml(role, text, creation) {
+    function buildAttachmentHtml(attachment) {
+        if (!attachment) return '';
+        if (attachment.is_image) {
+            return `<div class="aiko-msg-attachment">
+                <img class="aiko-msg-attachment-img" src="${attachment.file_url}" alt="${escapeHtml(attachment.file_name || '')}" onclick="window.open('${attachment.file_url}', '_blank')">
+            </div>`;
+        }
+        return `<div class="aiko-msg-attachment">
+            <a class="aiko-msg-file-card" href="${attachment.file_url}" target="_blank" rel="noopener">
+                <span class="aiko-msg-file-icon">${fileIconSvg()}</span>
+                <span class="aiko-msg-file-name">${escapeHtml(attachment.file_name || 'File')}</span>
+            </a>
+        </div>`;
+    }
+
+    function buildMessageHtml(role, text, creation, attachment) {
         let content = (role === 'assistant') ? renderMarkdown(text) : escapeHtml(text);
         const time  = formatTimestamp(creation);
+        const attachmentHtml = buildAttachmentHtml(attachment);
         const copyBtn = (role === 'assistant')
             ? `<button class="aiko-copy-btn" data-text="${escapeHtml(text)}">
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -570,7 +616,8 @@ $(document).ready(function () {
         return `
             <div class="aiko-message ${role}">
                 <div class="aiko-message-inner">
-                    <div class="aiko-bubble">${content}</div>
+                    ${attachmentHtml}
+                    ${text ? `<div class="aiko-bubble">${content}</div>` : ''}
                     <div class="aiko-message-footer">
                         <span class="aiko-timestamp">${time}</span>
                         ${copyBtn}
@@ -579,10 +626,10 @@ $(document).ready(function () {
             </div>`;
     }
 
-    function appendMessage(role, text, doScroll, creation) {
+    function appendMessage(role, text, doScroll, creation, attachment) {
         if (doScroll === undefined) doScroll = true;
         $('#aiko-chat-messages').find('.aiko-empty-state').remove();
-        $('#aiko-chat-messages').append(buildMessageHtml(role, text, creation));
+        $('#aiko-chat-messages').append(buildMessageHtml(role, text, creation, attachment));
         messageCount++;
         if (doScroll) {
             if (isScrolledUp) {
@@ -753,9 +800,99 @@ $(document).ready(function () {
         }
     }
 
+    // ── ATTACH FILE ───────────────────────────────────────────────────────
+    function humanFileSize(bytes) {
+        if (!bytes && bytes !== 0) return '';
+        const units = ['B', 'KB', 'MB', 'GB'];
+        let i = 0, size = bytes;
+        while (size >= 1024 && i < units.length - 1) { size /= 1024; i++; }
+        return (i === 0 ? size : size.toFixed(1)) + ' ' + units[i];
+    }
+
+    function isImageFile(name) {
+        return /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(name || '');
+    }
+
+    function fileIconSvg() {
+        return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>`;
+    }
+
+    function renderAttachPreview() {
+        const $box = $('#aiko-attach-preview');
+        if (isUploadingFile) {
+            $box.removeClass('hidden').html(`
+                <div class="aiko-attach-chip aiko-attach-uploading">
+                    <div class="aiko-attach-spinner"></div>
+                    <span class="aiko-attach-name">Uploading…</span>
+                </div>`);
+            return;
+        }
+        if (!attachedFile) { $box.addClass('hidden').html(''); return; }
+
+        const thumb = attachedFile.is_image
+            ? `<img class="aiko-attach-thumb" src="${attachedFile.file_url}" alt="">`
+            : `<div class="aiko-attach-file-icon">${fileIconSvg()}</div>`;
+
+        $box.removeClass('hidden').html(`
+            <div class="aiko-attach-chip">
+                ${thumb}
+                <span class="aiko-attach-name" title="${escapeHtml(attachedFile.file_name)}">${escapeHtml(attachedFile.file_name)}</span>
+                <button class="aiko-attach-remove" id="aiko-attach-remove" title="Remove">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>`);
+    }
+
+    $('#aiko-attach-preview').on('click', '#aiko-attach-remove', function () {
+        attachedFile = null;
+        renderAttachPreview();
+    });
+
+    $('#aiko-attach-btn').on('click', function () {
+        if (isUploadingFile) return;
+        $('#aiko-file-input').val('').trigger('click');
+    });
+
+    $('#aiko-file-input').on('change', function (e) {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+
+        isUploadingFile = true;
+        renderAttachPreview();
+
+        const formData = new FormData();
+        formData.append('file', file, file.name);
+        formData.append('is_private', 0);
+
+        $.ajax({
+            url: '/api/method/upload_file',
+            type: 'POST',
+            data: formData,
+            processData: false,
+            contentType: false,
+            headers: { 'X-Frappe-CSRF-Token': frappe.csrf_token },
+            success: function (res) {
+                const msg = res.message || {};
+                attachedFile = {
+                    file_url:  msg.file_url,
+                    file_name: msg.file_name || file.name,
+                    is_image:  isImageFile(msg.file_name || file.name)
+                };
+                isUploadingFile = false;
+                renderAttachPreview();
+            },
+            error: function () {
+                isUploadingFile = false;
+                attachedFile = null;
+                renderAttachPreview();
+                frappe.show_alert({ message: 'File upload failed.', indicator: 'red' });
+            }
+        });
+    });
+
     // ── SEND ──────────────────────────────────────────────────────────────
     function sendMessage() {
-        if (isThinking) return;
+        if (isThinking || isUploadingFile) return;
         const input = $('#aiko-chat-input');
         const text  = input.val().trim();
         if (!text) return;
@@ -763,15 +900,31 @@ $(document).ready(function () {
         // stop any active mic recording
         document.getElementById('aiko-mic-btn').classList.remove('recording', 'aiko-mic-transcribing');
         if (typeof stopVoiceRecording === 'function') stopVoiceRecording();
+        if (!text && !attachedFile) return;
+
+        const sentAttachment = attachedFile;
         input.val('').css('height', 'auto');
-        appendMessage('user', text);
+        appendMessage('user', text, true, null, sentAttachment);
+        attachedFile = null;
+        renderAttachPreview();
         currentRequestId = frappe.utils.get_random(10);
         responseStopped = false;
         showThinking();
 
+        let outgoingText = text;
+        if (sentAttachment) {
+            const fullUrl = sentAttachment.file_url.startsWith('/')
+                ? (window.location.origin + sentAttachment.file_url)
+                : sentAttachment.file_url;
+            const fileNote = `[System note: The user has attached a file named "${sentAttachment.file_name}" available at ${fullUrl}. Use the appropriate tool to read/extract its contents before answering, then respond based on what it contains.]`;
+            outgoingText = text ? `${text}\n\n${fileNote}` : `The user sent a file with no additional message.\n\n${fileNote}`;
+        }
+
+        const callArgs = { message: outgoingText, thread_id: thread_id, request_id: currentRequestId };
+
         frappe.call({
             method: 'frappe_assistant_core.aiko.api.chat',
-            args: { message: text, thread_id: thread_id, request_id: currentRequestId },
+            args: callArgs,
             callback: function (r) {
                 if (!r.message || !r.message.success) {
                     if (!isThinking) return;
