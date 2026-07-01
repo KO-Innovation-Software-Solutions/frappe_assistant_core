@@ -1,4 +1,3 @@
-# frappe_assistant_core/aiko/providers/whisper.py
 import frappe
 from faster_whisper import WhisperModel
 
