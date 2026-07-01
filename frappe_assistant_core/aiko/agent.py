@@ -7,6 +7,7 @@ from mcp.client.streamable_http import streamablehttp_client
 from frappe.utils import get_url
 
 from .providers import OpenAIProvider, OllamaProvider
+from frappe_assistant_core.aiko.providers.whisper import transcribe_audio
 
 MAX_HISTORY_MESSAGES = 20
 
@@ -68,6 +69,11 @@ class AikoAgent:
         if len(self.messages) > MAX_HISTORY_MESSAGES:
             system_prompt = self.messages[0]
             self.messages = [system_prompt] + self.messages[-MAX_HISTORY_MESSAGES:]
+
+    def handle_voice_message(audio_file_path, session_id):
+        transcription = transcribe_audio(audio_file_path, model_size="medium")
+        user_text = transcription["text"]
+        return process_message(user_text, session_id=session_id)
 
     async def connect_to_streamable_http_server(self):
         """Connect to the Frappe MCP server"""

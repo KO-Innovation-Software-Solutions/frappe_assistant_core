@@ -839,4 +839,156 @@ $(document).ready(function () {
             appendMessage('assistant', data.error || 'An error occurred.');
         }
     });
+
+
+    // ── VOICE INPUT (live preview + whisper refine) ──────────────────────────
+function initVoiceInput() {
+    const micBtn = document.getElementById('aiko-mic-btn');
+    const chatInput = document.getElementById('aiko-chat-input');
+    if (!micBtn || !chatInput) return;
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        micBtn.style.display = 'none';
+        return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let liveRecognition = null;
+    let liveBaseText = '';
+
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let isRecording = false;
+    let stream = null;
+
+    function startLivePreview() {
+        if (!SpeechRecognition) return;
+        liveRecognition = new SpeechRecognition();
+        liveRecognition.continuous = true;
+        liveRecognition.interimResults = true;
+        liveRecognition.lang = 'en-IN';
+
+        liveRecognition.onresult = (event) => {
+            let finalText = '';
+            let interimText = '';
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                const transcript = event.results[i][0].transcript;
+                if (event.results[i].isFinal) finalText += transcript;
+                else interimText += transcript;
+            }
+            if (finalText) liveBaseText += finalText;
+            chatInput.value = (liveBaseText + interimText).trim();
+            chatInput.style.height = 'auto';
+            chatInput.style.height = Math.min(chatInput.scrollHeight, 100) + 'px';
+        };
+
+        liveRecognition.onerror = (e) => {
+            console.warn('Live preview error (non-fatal):', e.error);
+        };
+
+        try {
+            liveRecognition.start();
+        } catch (e) {
+            console.warn('Live preview could not start:', e);
+        }
+    }
+
+    function stopLivePreview() {
+        if (liveRecognition) {
+            try { liveRecognition.stop(); } catch (e) {}
+            liveRecognition = null;
+        }
+    }
+
+    async function startRecording() {
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (err) {
+            console.error('Mic access error:', err);
+            frappe.show_alert({ message: 'Microphone access denied', indicator: 'red' });
+            return;
+        }
+
+        audioChunks = [];
+        liveBaseText = '';
+        chatInput.value = '';
+
+        const mimeType = MediaRecorder.isTypeSupported('audio/webm')
+            ? 'audio/webm'
+            : 'audio/ogg';
+        mediaRecorder = new MediaRecorder(stream, { mimeType });
+
+        mediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) audioChunks.push(e.data);
+        };
+
+        mediaRecorder.onstop = () => {
+            stream.getTracks().forEach((t) => t.stop());
+            const audioBlob = new Blob(audioChunks, { type: mimeType });
+            transcribeBlob(audioBlob, mimeType);
+        };
+
+        mediaRecorder.start();
+        isRecording = true;
+        micBtn.classList.add('recording');
+        startLivePreview();
+    }
+
+    function stopRecording() {
+        if (mediaRecorder && isRecording) {
+            mediaRecorder.stop();
+            isRecording = false;
+            micBtn.classList.remove('recording');
+        }
+        stopLivePreview();
+    }
+
+    function transcribeBlob(audioBlob, mimeType) {
+        micBtn.classList.add('aiko-mic-transcribing');
+        const placeholderBefore = chatInput.placeholder;
+        chatInput.placeholder = 'Refining transcription…';
+
+        const reader = new FileReader();
+        reader.onloadend = function () {
+            const base64Audio = reader.result.split(',')[1];
+
+            frappe.call({
+                method: 'frappe_assistant_core.api.voice_transcriber.transcribe_base64',
+                args: {
+                    audio_base64: base64Audio,
+                    model_size: 'medium'
+                },
+                callback: function (r) {
+                    micBtn.classList.remove('aiko-mic-transcribing');
+                    chatInput.placeholder = placeholderBefore;
+
+                    if (r.message && r.message.success && r.message.text) {
+                        chatInput.value = r.message.text.trim();
+                        chatInput.style.height = 'auto';
+                        chatInput.style.height = Math.min(chatInput.scrollHeight, 100) + 'px';
+                        chatInput.focus();
+                    }
+                    // If whisper fails, the live preview text (already in the box) stays as-is — silent fallback
+                },
+                error: function () {
+                    micBtn.classList.remove('aiko-mic-transcribing');
+                    chatInput.placeholder = placeholderBefore;
+                    // Live preview text stays in the box even if whisper refine fails
+                }
+            });
+        };
+        reader.readAsDataURL(audioBlob);
+    }
+
+    micBtn.addEventListener('click', () => {
+        if (isRecording) {
+            stopRecording();
+        } else {
+            startRecording();
+        }
+    });
+}
+
+initVoiceInput();
+
 });

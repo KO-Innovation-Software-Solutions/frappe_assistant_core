@@ -1104,3 +1104,16 @@ body[data-route="aiko-chat"] .layout-main-section  { width: 100% !important; }
     pointer-events: none;
     user-select: none;
 }
+
+#aiko-mic-btn.aiko-mic-transcribing {
+    background: #ede9fe;
+    border-color: #7c3aed;
+    color: #7c3aed;
+    animation: aiko-mic-transcribe-spin 1s linear infinite;
+}
+
+@keyframes aiko-mic-transcribe-spin {
+    0%   { opacity: 0.5; }
+    50%  { opacity: 1; }
+    100% { opacity: 0.5; }
+}
