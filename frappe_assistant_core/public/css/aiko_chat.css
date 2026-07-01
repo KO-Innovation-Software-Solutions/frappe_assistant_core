@@ -648,9 +648,45 @@
 #aiko-stop-btn:hover  { background: #ef4444; color: white; transform: scale(1.08); }
 #aiko-stop-btn:active { transform: scale(0.93); }
 
+
+
+/* ── MIC BUTTON ─────────────────────────────────────────────────────────── */
+#aiko-mic-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: transparent;
+    border: 1px solid #e5e7eb;
+    color: #6b7280;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.1s;
+    flex-shrink: 0;
+}
+#aiko-mic-btn:hover {
+    background: #f5f3ff;
+    border-color: #c4b5fd;
+    color: #7c3aed;
+}
+#aiko-mic-btn:active { transform: scale(0.95); }
+#aiko-mic-btn.recording {
+    background: #fee2e2;
+    border-color: #ef4444;
+    color: #ef4444;
+    animation: aiko-mic-pulse 1s ease-in-out infinite;
+}
+@keyframes aiko-mic-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+    50%      { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0.15); }
+}
+
+
 /* ── HIDE FRAPPE SIDEBAR on aiko-chat route ──────────────────────────────── */
 body[data-route="aiko-chat"] .layout-side-section { display: none !important; }
 body[data-route="aiko-chat"] .layout-main-section  { width: 100% !important; }
+
 
 /* ═══════════════════════════════════════════════════════════════════════════
    THINKING INDICATOR  —  truck + dots + phrase
@@ -1234,4 +1270,17 @@ body[data-route="aiko-chat"] .layout-main-section  { width: 100% !important; }
     opacity: 0.4;
     pointer-events: none;
     user-select: none;
+}
+
+#aiko-mic-btn.aiko-mic-transcribing {
+    background: #ede9fe;
+    border-color: #7c3aed;
+    color: #7c3aed;
+    animation: aiko-mic-transcribe-spin 1s linear infinite;
+}
+
+@keyframes aiko-mic-transcribe-spin {
+    0%   { opacity: 0.5; }
+    50%  { opacity: 1; }
+    100% { opacity: 0.5; }
 }
