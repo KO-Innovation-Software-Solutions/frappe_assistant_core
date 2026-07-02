@@ -62,6 +62,9 @@ dependencies = [
     "langchain-anthropic>=0.1.0",
     "langchain-openai>=0.1.0",
     "langchain-ollama>=0.1.0",
+    "tts_models/en/vctk/vits",
+    "faster-whisper",
+    
 ]
 
 [project.optional-dependencies]
