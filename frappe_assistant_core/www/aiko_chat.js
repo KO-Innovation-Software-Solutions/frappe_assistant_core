@@ -17,6 +17,82 @@ window.AikoChatPage = {
             "Almost at the destination…"
         ];
         let _thinkInterval = null;
+        // ── TTS ───────────────────────────────────────────────────────────
+        let currentAudio = null;
+        let currentSpeakBtn = null;
+        let speakToken = 0;
+
+        const SPEAK_ICON = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+        </svg><span>Listen</span>`;
+
+        const STOP_ICON = `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="5" y="5" width="14" height="14" rx="2"></rect>
+        </svg><span>Stop</span>`;
+
+        function setBtnSpeaking($btn) {
+            $btn.html(STOP_ICON).addClass('speaking');
+        }
+
+        function resetBtn($btn) {
+            $btn.html(SPEAK_ICON).removeClass('speaking').removeClass('loading');
+        }
+
+        function stopSpeaking() {
+            speakToken++; // invalidate any pending TTS request
+            if (currentAudio) {
+                currentAudio.pause();
+                currentAudio.currentTime = 0;
+                currentAudio = null;
+            }
+            if (currentSpeakBtn) {
+                resetBtn(currentSpeakBtn);
+                currentSpeakBtn = null;
+            }
+        }
+
+        function speakBotResponse(text, $btn) {
+            const cleanText = text.replace(/[#*`_~>\[\]]/g, '').trim();
+            if (!cleanText) return;
+
+            // Clicking the button that's already speaking = stop it
+            if (currentSpeakBtn && currentSpeakBtn.is($btn)) {
+                stopSpeaking();
+                return;
+            }
+
+            // Switching to a different message — silence whatever was playing
+            // AND invalidate any still-pending request from an earlier click
+            stopSpeaking();
+            const myToken = speakToken; // snapshot — this click "owns" this token
+            $btn.addClass('loading');
+
+            frappe.call({
+                method: "frappe_assistant_core.utils.tts_service.synthesize_speech",
+                args: { text: cleanText },
+                callback: function (r) {
+                    $btn.removeClass('loading');
+                    // If another click happened while we were waiting, drop this response
+                    if (myToken !== speakToken) return;
+                    if (r.message && r.message.audio_url) {
+                        const audio = new Audio(r.message.audio_url + '?t=' + Date.now());
+                        currentAudio = audio;
+                        currentSpeakBtn = $btn;
+                        setBtnSpeaking($btn);
+                        audio.play().catch(function (err) {
+                            console.warn("TTS playback blocked:", err);
+                            stopSpeaking();
+                        });
+                        audio.addEventListener('ended', stopSpeaking);
+                    }
+                },
+                error: function () {
+                    $btn.removeClass('loading');
+                }
+            });
+        }
 
         function shuffledPhrases() {
             const arr = THINK_PHRASES.slice();
@@ -334,6 +410,7 @@ window.AikoChatPage = {
 
         // ── LOAD SESSION ──────────────────────────────────────────────────
         function loadSession(sessionName, sessionThreadId) {
+            stopSpeaking();
             currentSessionName    = sessionName;
             thread_id             = sessionThreadId;
             isScrolledUp          = false;
@@ -376,6 +453,7 @@ window.AikoChatPage = {
 
         // ── NEW CHAT ──────────────────────────────────────────────────────
         function startNewChat() {
+            stopSpeaking();
             thread_id          = frappe.utils.get_random(10);
             currentSessionName = null;
             messageCount       = 0;
@@ -489,8 +567,14 @@ window.AikoChatPage = {
                             .replace(/`([^`]+)`/g,         '<code>$1</code>');
                     }
 
-                    const headers = parseRow(header);
-                    const rows    = body.trim().split('\n').map(parseRow);
+                    let headers = parseRow(header);
+                    let rows    = body.trim().split('\n').map(parseRow);
+
+                    // Drop a leading serial-number column (#, S.No, Sr.No, No.)
+                    if (headers.length && /^(#|s\.?\s?no\.?|sr\.?\s?no\.?|no\.?)$/i.test(headers[0].trim())) {
+                        headers = headers.slice(1);
+                        rows    = rows.map(r => r.slice(1));
+                    }
 
                     const th = headers.map(h =>
                         `<th>${inlineMarkdown(h)}</th>`).join('');
@@ -507,14 +591,15 @@ window.AikoChatPage = {
 
             // ── Step 3: Escape HTML in remaining text ─────────────────────
             let html = text
-                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-                // Headers
-                .replace(/^#### (.+)$/gm, '<h4>$1</h4>')
-                .replace(/^### (.+)$/gm,  '<h3>$1</h3>')
-                .replace(/^## (.+)$/gm,   '<h2>$1</h2>')
-                .replace(/^# (.+)$/gm,    '<h1>$1</h1>')
+            // Headers (dynamic level, handles 1–6 hashes)
+            html = html.replace(/^(#{1,6})\s+(.+)$/gm, function (_, hashes, content) {
+                const level = hashes.length;
+                return `<h${level}>${content}</h${level}>`;
+            });
 
+            html = html
                 // Bold + Italic
                 .replace(/\*\*\*(.+?)\*\*\*/gs, '<strong><em>$1</em></strong>')
                 .replace(/\*\*(.+?)\*\*/gs,     '<strong>$1</strong>')
@@ -607,6 +692,16 @@ window.AikoChatPage = {
                     Copy
                 </button>`
                 : '';
+            const speakBtn = (role === 'assistant')
+                ? `<button class="aiko-speak-btn" title="Listen to this response">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                        <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+                    </svg>
+                    <span>Listen</span>
+                </button>`
+                : '';
 
             return `
                 <div class="aiko-message ${role}">
@@ -618,6 +713,7 @@ window.AikoChatPage = {
                         <div class="aiko-message-footer">
                             <span class="aiko-timestamp">${time}</span>
                             ${copyBtn}
+                            ${speakBtn}
                         </div>
                     </div>
                 </div>`;
@@ -645,7 +741,11 @@ window.AikoChatPage = {
             $('#aiko-page-scroll-label').text('↓');
             $('#aiko-page-scroll-btn').removeClass('aiko-scroll-btn-new');
         }
-
+        $messages.on('click', '.aiko-speak-btn', function () {
+            const $btn = $(this);
+            const text = $btn.closest('.aiko-message').find('.aiko-bubble').text();
+            speakBotResponse(text, $btn);
+        });
         // Code block copy button
         $messages.on('click', '.aiko-code-copy', function () {
             const code = $(this).data('code');
