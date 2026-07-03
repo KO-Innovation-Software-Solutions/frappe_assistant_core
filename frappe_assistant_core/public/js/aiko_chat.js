@@ -15,6 +15,82 @@ $(document).ready(function () {
         "Almost there…"
     ];
     let _thinkInterval = null;
+    // ── TTS ───────────────────────────────────────────────────────────────
+    let currentAudio = null;
+    let currentSpeakBtn = null;
+    let speakToken = 0;
+
+    const SPEAK_ICON = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+        <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+        <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+    </svg><span>Listen</span>`;
+
+    const STOP_ICON = `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+        <rect x="5" y="5" width="14" height="14" rx="2"></rect>
+    </svg><span>Stop</span>`;
+
+    function setBtnSpeaking($btn) {
+        $btn.html(STOP_ICON).addClass('speaking');
+    }
+
+    function resetBtn($btn) {
+        $btn.html(SPEAK_ICON).removeClass('speaking').removeClass('loading');
+    }
+
+    function stopSpeaking() {
+        speakToken++;
+        if (currentAudio) {
+            currentAudio.pause();
+            currentAudio.currentTime = 0;
+            currentAudio = null;
+        }
+        if (currentSpeakBtn) {
+            resetBtn(currentSpeakBtn);
+            currentSpeakBtn = null;
+        }
+    }
+
+    function speakBotResponse(text, $btn) {
+        const cleanText = text.replace(/[#*`_~>\[\]]/g, '').trim();
+        if (!cleanText) return;
+
+        // Clicking the button that's already speaking = stop it
+        if (currentSpeakBtn && currentSpeakBtn.is($btn)) {
+            stopSpeaking();
+            return;
+        }
+
+        // Switching to a different message — silence whatever was playing
+        // AND invalidate any still-pending request from an earlier click
+        stopSpeaking();
+        const myToken = speakToken; // snapshot — this click "owns" this token
+        $btn.addClass('loading');
+
+        frappe.call({
+            method: "frappe_assistant_core.utils.tts_service.synthesize_speech",
+            args: { text: cleanText },
+            callback: function (r) {
+                $btn.removeClass('loading');
+                // If another click happened while we were waiting, drop this response
+                if (myToken !== speakToken) return;
+                if (r.message && r.message.audio_url) {
+                    const audio = new Audio(r.message.audio_url + '?t=' + Date.now());
+                    currentAudio = audio;
+                    currentSpeakBtn = $btn;
+                    setBtnSpeaking($btn);
+                    audio.play().catch(function (err) {
+                        console.warn("TTS playback blocked:", err);
+                        stopSpeaking();
+                    });
+                    audio.addEventListener('ended', stopSpeaking);
+                }
+            },
+            error: function () {
+                $btn.removeClass('loading');
+            }
+        });
+    }
 
     function shuffledPhrases() {
         const arr = THINK_PHRASES.slice();
@@ -376,6 +452,7 @@ $(document).ready(function () {
     $('#aiko-new-chat-btn').on('click', function () { startNewChat(); });
 
     function startNewChat() {
+        stopSpeaking();
         thread_id          = frappe.utils.get_random(10);
         currentSessionName = null;
         currentRequestId   = null;
@@ -454,6 +531,7 @@ $(document).ready(function () {
 
     // ── LOAD SESSION ──────────────────────────────────────────────────────
     function loadSession(sessionName, sessionThreadId) {
+        stopSpeaking();
         hideSessionsPanel();
         currentSessionName = sessionName;
         thread_id          = sessionThreadId;
@@ -519,8 +597,13 @@ $(document).ready(function () {
                         .replace(/`([^`]+)`/g,         '<code>$1</code>');
                 }
 
-                const headers = parseRow(header);
-                const rows    = body.trim().split('\n').map(parseRow);
+                let headers = parseRow(header);
+                let rows    = body.trim().split('\n').map(parseRow);
+                if (headers.length && /^(#|s\.?\s?no\.?|sr\.?\s?no\.?|no\.?)$/i.test(headers[0].trim())) {
+                    headers = headers.slice(1);
+                    rows    = rows.map(r => r.slice(1));
+                }
+
                 const th = headers.map(h => `<th>${inlineMarkdown(h)}</th>`).join('');
                 const tr = rows.map(r =>
                     '<tr>' + r.map(c => `<td>${inlineMarkdown(c)}</td>`).join('') + '</tr>'
@@ -613,6 +696,17 @@ $(document).ready(function () {
                 Copy
             </button>`
             : '';
+        const speakBtn = (role === 'assistant')
+                ? `<button class="aiko-speak-btn" title="Listen to this response">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                        <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+                    </svg>
+                    <span>Listen</span>
+                </button>`
+                : '';
+                
         return `
             <div class="aiko-message ${role}">
                 <div class="aiko-message-inner">
@@ -621,6 +715,7 @@ $(document).ready(function () {
                     <div class="aiko-message-footer">
                         <span class="aiko-timestamp">${time}</span>
                         ${copyBtn}
+                        ${speakBtn}
                     </div>
                 </div>
             </div>`;
@@ -649,6 +744,12 @@ $(document).ready(function () {
         $('#aiko-scroll-label').text('↓');
         $('#aiko-scroll-btn').removeClass('aiko-scroll-btn-new');
     }
+    // ── SPEAK BUTTON ──────────────────────────────────────────────────────
+    $('#aiko-chat-messages').on('click', '.aiko-speak-btn', function () {
+        const $btn = $(this);
+        const text = $btn.closest('.aiko-message').find('.aiko-bubble').text();
+        speakBotResponse(text, $btn);
+    });
 
     // ── COPY BUTTONS ──────────────────────────────────────────────────────
     $('#aiko-chat-messages').on('click', '.aiko-copy-btn', function () {
