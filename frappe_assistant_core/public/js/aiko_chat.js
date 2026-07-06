@@ -428,6 +428,34 @@ $(document).ready(function () {
         }
     });
 
+    // ── VOICE TOGGLES (global admin setting AND per-browser preference) ───
+    let globalVoiceFlags = { enable_voice_output: true, enable_voice_input: true };
+
+    // ── VOICE FEATURES (controlled globally by Assistant Core Settings) ────
+    function applyVoicePrefs(flags) {
+        $('#aiko-chat-window').toggleClass('aiko-tts-off', !flags.enable_voice_output);
+        $('#aiko-chat-window').toggleClass('aiko-stt-off', !flags.enable_voice_input);
+    }
+
+    frappe.realtime.on('aiko_voice_settings_updated', function (flags) {
+        applyVoicePrefs(flags);
+    });
+
+    $('#aiko-tts-toggle-btn').on('click', function () {
+        const ttsOn = localStorage.getItem('aiko_tts_enabled') !== 'false';
+        localStorage.setItem('aiko_tts_enabled', ttsOn ? 'false' : 'true');
+        applyVoicePrefs();
+    });
+
+    $('#aiko-mic-toggle-btn').on('click', function () {
+        const sttOn = localStorage.getItem('aiko_stt_enabled') !== 'false';
+        localStorage.setItem('aiko_stt_enabled', sttOn ? 'false' : 'true');
+        applyVoicePrefs();
+        if (sttOn && typeof mediaRecorder !== 'undefined' && mediaRecorder && mediaRecorder.state === 'recording') {
+            mediaRecorder.stop();
+        }
+    });
+
     $('#aiko-chat-close').on('click', function () {
         const $win = $('#aiko-chat-window');
         $win.css({ animation: 'aiko-scale-out 0.28s cubic-bezier(0.4, 0, 1, 1) forwards' });

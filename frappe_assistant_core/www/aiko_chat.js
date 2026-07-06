@@ -259,6 +259,14 @@ window.AikoChatPage = {
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
                             </button>
                             <textarea class="aiko-page-textarea" id="aiko-page-input" placeholder="Ask AIKO anything…" rows="1"></textarea>
+                            <button class="aiko-page-mic-btn" id="aiko-page-mic-btn" title="Voice input">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                                    <line x1="12" y1="19" x2="12" y2="23"></line>
+                                    <line x1="8" y1="23" x2="16" y2="23"></line>
+                                </svg>
+                            </button>
                             <button class="aiko-page-stop-btn" id="aiko-page-stop-btn" title="Stop generating" style="display: none;">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                                     <rect x="5" y="5" width="14" height="14" rx="2"/>
@@ -276,6 +284,141 @@ window.AikoChatPage = {
 
         const $root     = $('#aiko-page-root');
         const $messages = $('#aiko-page-messages');
+        let globalVoiceFlags = { enable_voice_output: true };
+
+        function applyVoicePrefs(flags) {
+            $root.toggleClass('aiko-tts-off', !flags.enable_voice_output);
+            $root.toggleClass('aiko-stt-off', !flags.enable_voice_input);
+        }
+
+        frappe.realtime.on('aiko_voice_settings_updated', function (flags) {
+            applyVoicePrefs(flags);
+        });
+
+        $('#aiko-page-tts-toggle').on('click', function () {
+            const ttsOn = localStorage.getItem('aiko_tts_enabled') !== 'false';
+            localStorage.setItem('aiko_tts_enabled', ttsOn ? 'false' : 'true');
+            applyVoicePrefs();
+        });
+        // ── VOICE INPUT (mirrors widget behavior) ───────────────────────────
+        (function initPageVoiceInput() {
+            const micBtn = document.getElementById('aiko-page-mic-btn');
+            const chatInput = document.getElementById('aiko-page-input');
+            if (!micBtn || !chatInput) return;
+
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                micBtn.style.display = 'none';
+                return;
+            }
+
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            let liveRecognition = null;
+            let liveBaseText = '';
+            let mediaRecorder = null;
+            let audioChunks = [];
+            let isRecording = false;
+            let stream = null;
+
+            function startLivePreview() {
+                if (!SpeechRecognition) return;
+                liveRecognition = new SpeechRecognition();
+                liveRecognition.continuous = true;
+                liveRecognition.interimResults = true;
+                liveRecognition.lang = 'en-IN';
+
+                liveRecognition.onresult = (event) => {
+                    let finalText = '';
+                    let interimText = '';
+                    for (let i = event.resultIndex; i < event.results.length; i++) {
+                        const transcript = event.results[i][0].transcript;
+                        if (event.results[i].isFinal) finalText += transcript;
+                        else interimText += transcript;
+                    }
+                    if (finalText) liveBaseText += finalText;
+                    chatInput.value = (liveBaseText + interimText).trim();
+                    chatInput.style.height = 'auto';
+                    chatInput.style.height = Math.min(chatInput.scrollHeight, 100) + 'px';
+                };
+                liveRecognition.onerror = (e) => console.warn('Live preview error (non-fatal):', e.error);
+                try { liveRecognition.start(); } catch (e) { console.warn('Live preview could not start:', e); }
+            }
+
+            function stopLivePreview() {
+                if (liveRecognition) { try { liveRecognition.stop(); } catch (e) {} liveRecognition = null; }
+            }
+
+            async function startRecording() {
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                } catch (err) {
+                    console.error('Mic access error:', err);
+                    frappe.show_alert({ message: 'Microphone access denied', indicator: 'red' });
+                    return;
+                }
+
+                audioChunks = [];
+                liveBaseText = '';
+                chatInput.value = '';
+
+                const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg';
+                mediaRecorder = new MediaRecorder(stream, { mimeType });
+
+                mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
+                mediaRecorder.onstop = () => {
+                    stream.getTracks().forEach((t) => t.stop());
+                    const audioBlob = new Blob(audioChunks, { type: mimeType });
+                    transcribeBlob(audioBlob, mimeType);
+                };
+
+                mediaRecorder.start();
+                isRecording = true;
+                micBtn.classList.add('recording');
+                startLivePreview();
+            }
+
+            function stopRecording() {
+                if (mediaRecorder && isRecording) {
+                    mediaRecorder.stop();
+                    isRecording = false;
+                    micBtn.classList.remove('recording');
+                }
+                stopLivePreview();
+            }
+
+            function transcribeBlob(audioBlob, mimeType) {
+                micBtn.classList.add('aiko-mic-transcribing');
+                const placeholderBefore = chatInput.placeholder;
+                chatInput.placeholder = 'Refining transcription…';
+
+                const reader = new FileReader();
+                reader.onloadend = function () {
+                    const base64Audio = reader.result.split(',')[1];
+                    frappe.call({
+                        method: 'frappe_assistant_core.api.voice_transcribe.transcribe_base64',
+                        args: { audio_base64: base64Audio, model_size: 'medium' },
+                        callback: function (r) {
+                            micBtn.classList.remove('aiko-mic-transcribing');
+                            chatInput.placeholder = placeholderBefore;
+                            if (r.message && r.message.success && r.message.text && chatInput.value.trim() === '') {
+                                chatInput.value = r.message.text.trim();
+                                chatInput.style.height = 'auto';
+                                chatInput.style.height = Math.min(chatInput.scrollHeight, 100) + 'px';
+                                chatInput.focus();
+                            }
+                        },
+                        error: function () {
+                            micBtn.classList.remove('aiko-mic-transcribing');
+                            chatInput.placeholder = placeholderBefore;
+                        }
+                    });
+                };
+                reader.readAsDataURL(audioBlob);
+            }
+
+            micBtn.addEventListener('click', () => {
+                if (isRecording) stopRecording(); else startRecording();
+            });
+        })();
 
         // ── SIDEBAR COLLAPSE ──────────────────────────────────────────────
         function applySidebarState() {
