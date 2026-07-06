@@ -160,6 +160,8 @@
 #aiko-new-chat-btn:hover,
 #aiko-chat-fullscreen:hover,
 #aiko-chat-close:hover { opacity: 1; }
+#aiko-chat-window.aiko-tts-off .aiko-speak-btn { display: none !important; }
+#aiko-chat-window.aiko-stt-off #aiko-mic-btn { display: none !important; }
 
 /* ── WIDGET MESSAGES AREA ────────────────────────────────────────────────── */
 .aiko-chat-messages {

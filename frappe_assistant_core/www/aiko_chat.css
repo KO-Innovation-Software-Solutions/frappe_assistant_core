@@ -1180,3 +1180,46 @@
     pointer-events: none;
     user-select: none;
 }
+#aiko-page-root.aiko-tts-off .aiko-speak-btn { display: none !important; }
+.aiko-page-mic-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: transparent;
+    border: 1px solid #e5e7eb;
+    color: #6b7280;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.1s;
+    flex-shrink: 0;
+}
+.aiko-page-mic-btn:hover {
+    background: #f5f3ff;
+    border-color: #c4b5fd;
+    color: #7c3aed;
+}
+.aiko-page-mic-btn:active { transform: scale(0.95); }
+.aiko-page-mic-btn.recording {
+    background: #fee2e2;
+    border-color: #ef4444;
+    color: #ef4444;
+    animation: aiko-mic-pulse 1s ease-in-out infinite;
+}
+.aiko-page-mic-btn.aiko-mic-transcribing {
+    background: #ede9fe;
+    border-color: #7c3aed;
+    color: #7c3aed;
+    animation: aiko-mic-transcribe-spin 1s linear infinite;
+}
+@keyframes aiko-mic-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+    50%      { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0.15); }
+}
+@keyframes aiko-mic-transcribe-spin {
+    0%   { opacity: 0.5; }
+    50%  { opacity: 1; }
+    100% { opacity: 0.5; }
+}
+#aiko-page-root.aiko-stt-off .aiko-page-mic-btn { display: none !important; }
