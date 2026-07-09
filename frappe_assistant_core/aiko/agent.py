@@ -7,7 +7,6 @@ from mcp.client.streamable_http import streamablehttp_client
 from frappe.utils import get_url
 
 from .providers import OpenAIProvider, OllamaProvider
-from frappe_assistant_core.aiko.providers.whisper import transcribe_audio
 
 MAX_HISTORY_MESSAGES = 20
 
