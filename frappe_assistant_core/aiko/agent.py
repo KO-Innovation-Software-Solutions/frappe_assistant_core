@@ -7,17 +7,15 @@ from mcp.client.streamable_http import streamablehttp_client
 from frappe.utils import get_url
 
 from .providers import OpenAIProvider, OllamaProvider
+from frappe_assistant_core.aiko.providers.whisper import transcribe_audio
 
 MAX_HISTORY_MESSAGES = 20
 
 class AikoAgent:
     """Unified MCP Agent for Frappe"""
 
-    def __init__(self, thread_id: str, surface: str = "chat"):
+    def __init__(self, thread_id: str):
         self.thread_id = thread_id
-        self.surface = surface
-        self.session_doctype = "Aiko Dashboard Session" if surface == "dashboard" else "Aiko Chat Session"
-        self.message_doctype = "Aiko Dashboard Message" if surface == "dashboard" else "Aiko Chat Message"
         self.settings = frappe.get_single("Assistant Core Settings")
         provider_name = self.settings.get("llm_provider", "ollama").lower()
         if provider_name == "openai":
@@ -47,12 +45,12 @@ class AikoAgent:
 
     def _load_history(self):
         session_name = frappe.db.get_value(
-            self.session_doctype, {"thread_id": self.thread_id}, "name"
+            "Aiko Chat Session", {"thread_id": self.thread_id}, "name"
         )
         if not session_name:
             return
         past_messages = frappe.db.get_list(
-            self.message_doctype,
+            "Aiko Chat Message",
             filters={
                 "session": session_name,
                 "role": ["in", ["user", "assistant"]],
@@ -61,12 +59,21 @@ class AikoAgent:
             order_by="creation asc",
             limit=MAX_HISTORY_MESSAGES,
         )
+
         for msg in past_messages:
-            self.messages.append({"role": msg["role"], "content": msg["content"]})
+            self.messages.append({
+                "role": msg["role"],
+                "content": msg["content"],
+            })
     def _trim_history(self):
         if len(self.messages) > MAX_HISTORY_MESSAGES:
             system_prompt = self.messages[0]
-            self.messages = [system_prompt] + self.messages[-(MAX_HISTORY_MESSAGES - 1):]
+            self.messages = [system_prompt] + self.messages[-MAX_HISTORY_MESSAGES:]
+
+    def handle_voice_message(audio_file_path, session_id):
+        transcription = transcribe_audio(audio_file_path, model_size="medium")
+        user_text = transcription["text"]
+        return process_message(user_text, session_id=session_id)
 
     async def connect_to_streamable_http_server(self):
         """Connect to the Frappe MCP server"""
@@ -108,26 +115,28 @@ class AikoAgent:
         except Exception:
             pass
 
-    async def _process_query(self, query: str, on_stage=None, is_cancelled=None, want_ui=False) -> dict:
+    async def _process_query(self, query: str, on_stage=None, is_cancelled=None) -> dict:
         await self.connect_to_streamable_http_server()
         try:
-            result = await self.provider.process_query(
-                query, self.session, self.messages,
-                on_stage=on_stage, is_cancelled=is_cancelled, want_ui=want_ui,
-            )
-            final_answer, updated_messages, usage, ui = result
+            result = await self.provider.process_query(query, self.session, self.messages, on_stage=on_stage, is_cancelled=is_cancelled)
+
+            # Always expect 3-tuple: (text, messages, usage)
+            final_answer, updated_messages, usage = result
+
+            # Guard against empty response
             if not final_answer:
                 final_answer = "I'm sorry, I couldn't generate a response. Please try again."
+
             self.messages = updated_messages
             self._trim_history()
+
             return {
                 "content": final_answer,
                 "input_tokens": usage.get("input_tokens", 0),
                 "output_tokens": usage.get("output_tokens", 0),
-                "ui": ui,
             }
         finally:
             await self.cleanup()
 
-    async def invoke(self, message: str, on_stage=None, is_cancelled=None, want_ui=False) -> dict:
-        return await self._process_query(message, on_stage=on_stage, is_cancelled=is_cancelled, want_ui=want_ui)
+    async def invoke(self, message: str, on_stage=None, is_cancelled=None) -> dict:
+        return await self._process_query(message, on_stage=on_stage, is_cancelled=is_cancelled)
