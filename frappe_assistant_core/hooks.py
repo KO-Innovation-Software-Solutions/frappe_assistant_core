@@ -38,10 +38,6 @@ app_include_js = "/assets/frappe_assistant_core/js/aiko_chat.js"
 web_include_css = "/assets/frappe_assistant_core/www/aiko_chat.css"
 web_include_js = "/assets/frappe_assistant_core/www/aiko_chat.js"
 
-# TTS
-tts_whitelist = [
-    "frappe_assistant_core.utils.tts_service.synthesize_speech"
-]
 # include custom scss in every website theme (without file extension ".scss")
 # website_theme_scss = "frappe_assistant_core/public/scss/website"
 
@@ -280,15 +276,7 @@ fixtures = [
 # ----------------------------
 
 # Tool discovery from external apps via hooks
-assistant_tools = [
-    "frappe_assistant_core.services.traccar_tools.GetVehiclePositionTool",
-    "frappe_assistant_core.services.traccar_tools.GetVehicleTripsTool",
-    "frappe_assistant_core.services.traccar_tools.GetVehicleStopsTool",
-    "frappe_assistant_core.services.traccar_tools.GetVehicleRouteTool",
-    "frappe_assistant_core.services.traccar_tools.GetVehicleEventsTool",
-    "frappe_assistant_core.services.traccar_tools.GetVehicleSummaryTool",
-    "frappe_assistant_core.services.traccar_tools.GetGeofencesTool",
-]
+assistant_tools = []
 # Tool configuration overrides
 assistant_tool_configs = {
     # Example tool config:

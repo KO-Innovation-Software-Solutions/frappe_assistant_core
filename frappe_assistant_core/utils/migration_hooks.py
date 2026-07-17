@@ -111,20 +111,16 @@ def after_install():
     try:
         frappe.logger("migration_hooks").info("Initializing tool discovery after app install")
 
-        from frappe_assistant_core.core.enhanced_tool_registry import get_tool_registry
+        from frappe_assistant_core.core.tool_registry import get_tool_registry
 
         # Discover and cache tools
         registry = get_tool_registry()
-        result = registry.refresh_tools(force=True)
+        success = registry.refresh_tools()
 
-        if result.get("success"):
-            tools_discovered = result.get("tools_discovered", 0)
-            frappe.logger("migration_hooks").info(
-                f"Tool discovery initialized: {tools_discovered} tools found"
-            )
+        if success:
+            frappe.logger("migration_hooks").info("Tool discovery initialized successfully")
         else:
-            error = result.get("error", "Unknown error")
-            frappe.logger("migration_hooks").warning(f"Tool discovery initialization had issues: {error}")
+            frappe.logger("migration_hooks").warning("Tool discovery initialization had issues")
 
     except Exception as e:
         frappe.logger("migration_hooks").error(f"Failed to initialize tool discovery: {str(e)}")
@@ -286,15 +282,14 @@ def get_migration_status() -> Dict[str, Any]:
         Status dictionary with cache and discovery information
     """
     try:
-        from frappe_assistant_core.core.enhanced_tool_registry import get_tool_registry
-        from frappe_assistant_core.utils.tool_cache import get_tool_cache
+        from frappe_assistant_core.core.tool_registry import get_tool_registry
 
-        cache = get_tool_cache()
         registry = get_tool_registry()
 
         return {
-            "cache_stats": cache.get_cache_stats(),
-            "registry_stats": registry.get_registry_stats(),
+            "registry_stats": {
+                "total_tools": len(registry.get_available_tools()),
+            },
             "migration_hooks_active": True,
         }
 

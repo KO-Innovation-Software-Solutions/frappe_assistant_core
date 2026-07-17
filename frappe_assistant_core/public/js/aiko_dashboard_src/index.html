@@ -1,0 +1,18 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Aiko Dashboard (dev)</title>
+  </head>
+  <body>
+    <div id="aiko-dashboard-root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+    <script>
+      // dev-only convenience: main.jsx sets window.AikoDashboard.mount,
+      // this just calls it immediately so `npm run dev` shows something.
+      window.addEventListener("DOMContentLoaded", () => {
+        setTimeout(() => window.AikoDashboard?.mount(document.getElementById("aiko-dashboard-root")), 0);
+      });
+    </script>
+  </body>
+</html>

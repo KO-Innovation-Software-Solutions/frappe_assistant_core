@@ -14,35 +14,11 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import json
-
 import frappe
-from frappe import _, get_doc, has_permission
+from frappe import get_doc
 
 ASSISTANT_ADMIN_ROLES = ("System Manager", "Assistant Admin")
 ASSISTANT_ACCESS_ROLES = ASSISTANT_ADMIN_ROLES + ("Assistant User",)
-
-
-def check_tool_permissions(tool_name: str, user: str) -> bool:
-    """Check if the user has permissions to access the specified tool."""
-    tool = get_doc("assistant Tool Registry", tool_name)
-
-    if not tool.enabled:
-        return False
-
-    required_permissions = json.loads(tool.required_permissions or "[]")
-
-    for perm in required_permissions:
-        if isinstance(perm, dict):
-            doctype = perm.get("doctype")
-            permission_type = perm.get("permission", "read")
-            if not has_permission(doctype, permission_type, user=user):
-                return False
-        elif isinstance(perm, str):
-            if perm not in get_roles(user):
-                return False
-
-    return True
 
 
 def get_roles(user: str) -> list:

@@ -344,7 +344,7 @@ def invalidate_tool_registry_cache():
 
     # Clear registry caches
     registry = get_tool_registry()
-    registry._discover_tools()  # Force refresh
+    registry.refresh_tools()
     frappe.cache.delete_key("get_cached_tool_registry_stats")
     frappe.cache.delete_keys("get_cached_user_tool_permissions_*")
 
