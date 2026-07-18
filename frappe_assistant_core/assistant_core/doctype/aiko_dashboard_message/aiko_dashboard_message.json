@@ -1,0 +1,96 @@
+{
+ "actions": [],
+ "creation": "2026-07-13 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "session",
+  "role",
+  "content",
+  "ui",
+  "input_tokens",
+  "output_tokens",
+  "total_tokens",
+  "llm_provider",
+  "llm_model"
+ ],
+ "fields": [
+  {
+   "fieldname": "session",
+   "fieldtype": "Link",
+   "options": "Aiko Dashboard Session",
+   "label": "Session",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "role",
+   "fieldtype": "Select",
+   "options": "user\nassistant",
+   "label": "Role",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "content",
+   "fieldtype": "Long Text",
+   "label": "Content"
+  },
+  {
+   "fieldname": "ui",
+   "fieldtype": "Long Text",
+   "label": "UI (OpenUI Lang)",
+   "description": "Generated dashboard DSL for this message, if any."
+  },
+  {
+   "fieldname": "input_tokens",
+   "fieldtype": "Int",
+   "label": "Input Tokens",
+   "default": "0"
+  },
+  {
+   "fieldname": "output_tokens",
+   "fieldtype": "Int",
+   "label": "Output Tokens",
+   "default": "0"
+  },
+  {
+   "fieldname": "total_tokens",
+   "fieldtype": "Int",
+   "label": "Total Tokens",
+   "default": "0"
+  },
+  {
+   "fieldname": "llm_provider",
+   "fieldtype": "Data",
+   "label": "LLM Provider"
+  },
+  {
+   "fieldname": "llm_model",
+   "fieldtype": "Data",
+   "label": "LLM Model"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "module": "Assistant Core",
+ "name": "Aiko Dashboard Message",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "ASC",
+ "track_changes": 1
+}
