@@ -1,0 +1,441 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --ink: #1F2621;
+  --paper: #F7F5EE;
+  --paper-dim: #EFEBE0;
+  --green: #2F5233;
+  --green-soft: #4C6E51;
+  --sage: #A9BFA8;
+  --amber: #D99A3D;
+  --rust: #B54A3F;
+  --line: #D8D2C2;
+  --white: #FFFFFF;
+
+  --openui-background: var(--paper);
+  --openui-foreground: var(--white);
+  --openui-popover-background: var(--white);
+  --openui-sunk: var(--paper-dim);
+  --openui-sunk-light: var(--paper);
+  --openui-border-default: var(--line);
+  --openui-border-interactive: var(--line);
+  --openui-border-interactive-emphasis: var(--green-soft);
+  --openui-text-neutral-primary: var(--ink);
+  --openui-text-neutral-secondary: var(--green-soft);
+  --openui-radius-s: 4px;
+  --openui-radius-m: 4px;
+  --openui-radius-l: 4px;
+  --openui-radius-xl: 4px;
+  --openui-radius-2xl: 4px;
+  --openui-radius-3xl: 4px;
+
+  --openui-font-body: "Inter", sans-serif;
+  --openui-font-heading: "Fraunces", serif;
+  --openui-font-label: "Inter", sans-serif;
+  --openui-font-numbers: "IBM Plex Mono", monospace;
+
+  --openui-text-body-xs: 400 12px/1.5 var(--openui-font-body);
+  --openui-text-body-xs-heavy: 500 12px/1.5 var(--openui-font-body);
+  --openui-text-body-sm: 400 14px/1.5 var(--openui-font-body);
+  --openui-text-body-sm-heavy: 500 14px/1.5 var(--openui-font-body);
+  --openui-text-body-default: 400 16px/1.5 var(--openui-font-body);
+  --openui-text-body-default-heavy: 500 16px/1.5 var(--openui-font-body);
+  --openui-text-body-lg: 400 18px/1.5 var(--openui-font-body);
+  --openui-text-body-lg-heavy: 500 18px/1.5 var(--openui-font-body);
+
+  --openui-text-heading-xs: 600 16px/1.25 var(--openui-font-heading);
+  --openui-text-heading-sm: 600 18px/1.25 var(--openui-font-heading);
+  --openui-text-heading-md: 600 24px/1.1 var(--openui-font-heading);
+  --openui-text-heading-lg: 600 28px/1.1 var(--openui-font-heading);
+  --openui-text-heading-xl: 700 32px/1.1 var(--openui-font-heading);
+
+  --openui-text-label-xs: 400 12px/1.25 var(--openui-font-label);
+  --openui-text-label-xs-heavy: 500 12px/1.25 var(--openui-font-label);
+  --openui-text-label-sm: 400 14px/1.25 var(--openui-font-label);
+  --openui-text-label-sm-heavy: 500 14px/1.25 var(--openui-font-label);
+  --openui-text-label-default: 400 16px/1.25 var(--openui-font-label);
+  --openui-text-label-default-heavy: 500 16px/1.25 var(--openui-font-label);
+  --openui-text-label-lg: 400 18px/1.25 var(--openui-font-label);
+  --openui-text-label-lg-heavy: 500 18px/1.25 var(--openui-font-label);
+
+  --openui-text-numbers-xs: 400 12px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-xs-heavy: 500 12px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-sm: 400 14px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-sm-heavy: 500 14px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-default: 400 16px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-default-heavy: 500 16px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-lg: 400 18px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-lg-heavy: 500 18px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-heading-sm: 600 18px/1.25 var(--openui-font-numbers);
+  --openui-text-numbers-heading-md: 600 24px/1.1 var(--openui-font-numbers);
+  --openui-text-numbers-heading-lg: 600 28px/1.1 var(--openui-font-numbers);
+  --openui-text-numbers-heading-xl: 600 32px/1.1 var(--openui-font-numbers);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--openui-font-body);
+  background: var(--paper);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@keyframes openui-loading-bar {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.openui-card-card:nth-child(1)  { animation: fadeSlideUp 0.45s ease both; }
+.openui-card-card:nth-child(2)  { animation: fadeSlideUp 0.45s ease 0.06s both; }
+.openui-card-card:nth-child(3)  { animation: fadeSlideUp 0.45s ease 0.12s both; }
+.openui-card-card:nth-child(4)  { animation: fadeSlideUp 0.45s ease 0.18s both; }
+.openui-card-card:nth-child(5)  { animation: fadeSlideUp 0.45s ease 0.24s both; }
+.openui-card-card:nth-child(6)  { animation: fadeSlideUp 0.45s ease 0.30s both; }
+.openui-card-card:nth-child(7)  { animation: fadeSlideUp 0.45s ease 0.36s both; }
+.openui-card-card:nth-child(8)  { animation: fadeSlideUp 0.45s ease 0.42s both; }
+.openui-card-card:nth-child(9)  { animation: fadeSlideUp 0.45s ease 0.48s both; }
+.openui-card-card:nth-child(10) { animation: fadeSlideUp 0.45s ease 0.54s both; }
+
+/* ── Card overrides ── */
+.openui-card-card {
+  background: var(--white) !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 4px !important;
+  padding: 24px !important;
+  box-shadow: 0 2px 8px rgba(31, 38, 33, 0.03) !important;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
+}
+
+.openui-card-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 32px rgba(31,38,33,0.10);
+}
+
+.openui-card-sunk {
+  background: var(--paper-dim) !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 4px !important;
+  padding: 24px !important;
+  box-shadow: none !important;
+}
+
+/* ── Masthead styling ── */
+.openui-card-sunk:has(.openui-header):not(:has(.openui-text-callout)) {
+  background: #EEF2EA !important;
+  color: var(--ink) !important;
+  border: 1px solid var(--line) !important;
+  border-left: 4px solid var(--green) !important;
+  padding: 28px 32px !important;
+  border-radius: 4px !important;
+  margin-bottom: 24px !important;
+}
+
+.openui-card-sunk:has(.openui-header):not(:has(.openui-text-callout)) .openui-header {
+  border-bottom: none !important;
+  padding-bottom: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+.openui-card-sunk:has(.openui-header):not(:has(.openui-text-callout)) .openui-header-top-left {
+  color: var(--ink) !important;
+  font-size: 1.75rem !important;
+  font-weight: 700 !important;
+  font-family: var(--openui-font-heading) !important;
+}
+
+.openui-card-sunk:has(.openui-header):not(:has(.openui-text-callout)) .openui-header-bottom {
+  color: var(--green-soft) !important;
+  font-size: 0.95rem !important;
+  margin-top: 6px !important;
+}
+
+/* ── Section headers (h2 style) ── */
+.openui-header {
+  border-bottom: 2px solid var(--green) !important;
+  padding-bottom: 8px !important;
+  margin-bottom: 16px !important;
+}
+
+.openui-header-top-left {
+  font-family: var(--openui-font-heading) !important;
+  font-size: 1.35rem !important;
+  font-weight: 600 !important;
+  color: var(--ink) !important;
+}
+
+.openui-header-bottom {
+  font-family: var(--openui-font-body) !important;
+  font-size: 0.85rem !important;
+  color: var(--green-soft) !important;
+  margin-top: 4px !important;
+}
+
+/* ── Table overrides ── */
+.openui-table-container {
+  border: 1px solid var(--line) !important;
+  border-radius: 4px !important;
+  box-shadow: none !important;
+  background-color: var(--white) !important;
+}
+
+.openui-table-head {
+  background-color: var(--paper-dim) !important;
+  border-bottom: 2px solid var(--line) !important;
+}
+
+.openui-table-head .openui-table-head-label {
+  font-family: var(--openui-font-label) !important;
+  color: var(--green-soft) !important;
+  font-weight: 600 !important;
+  font-size: 11px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+}
+
+.openui-table-row {
+  border-bottom: 1px solid var(--paper-dim) !important;
+  transition: background-color 0.15s ease !important;
+}
+
+.openui-table-row:nth-child(even) {
+  background-color: #FAF9F6 !important;
+}
+
+.openui-table-row:hover {
+  background-color: var(--paper) !important;
+}
+
+.openui-table-cell {
+  font-family: var(--openui-font-body) !important;
+  font-size: 13px !important;
+  color: var(--ink) !important;
+  padding: 10px 12px !important;
+}
+
+.openui-table-cell:has([style*="font-variant-numeric: tabular-nums"]),
+.openui-table-align-right {
+  font-family: var(--openui-font-numbers) !important;
+}
+
+/* ── Receipt Strip KPI styling ── */
+.sap-receipt-strip {
+  background: var(--white);
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  position: relative;
+  padding: 24px 12px;
+  margin-top: 8px;
+  margin-bottom: 28px;
+  box-shadow: 0 4px 20px rgba(31, 38, 33, 0.05);
+}
+
+.sap-receipt-strip::before,
+.sap-receipt-strip::after {
+  content: '';
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  height: 8px;
+  background-size: 16px 8px;
+  background-repeat: repeat-x;
+}
+
+.sap-receipt-strip::before {
+  top: -8px;
+  background-image: radial-gradient(circle at 8px -4px, transparent 8px, var(--white) 8px);
+  border-bottom: 1px solid var(--line);
+}
+
+.sap-receipt-strip::after {
+  bottom: -8px;
+  background-image: radial-gradient(circle at 8px 12px, transparent 8px, var(--white) 8px);
+  border-top: 1px solid var(--line);
+}
+
+.sap-receipt-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.sap-receipt-line {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 16px 20px !important;
+  border-radius: 4px !important;
+  border: 1px solid var(--line) !important;
+  box-shadow: 0 1px 3px rgba(31, 38, 33, 0.02) !important;
+  transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+}
+
+.sap-receipt-line:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 4px 12px rgba(31, 38, 33, 0.06) !important;
+}
+
+.sap-receipt-line:nth-child(1) {
+  background-color: #f0f7f4 !important;
+  border-left: 4px solid #2f5233 !important;
+}
+
+.sap-receipt-line:nth-child(1) .openui-card-card > div:nth-child(1),
+.sap-receipt-line:nth-child(1) .openui-card-card > div:nth-child(1) * {
+  color: #2f5233 !important;
+}
+
+.sap-receipt-line:nth-child(2) {
+  background-color: #fbf6ec !important;
+  border-left: 4px solid #d99a3d !important;
+}
+
+.sap-receipt-line:nth-child(2) .openui-card-card > div:nth-child(1),
+.sap-receipt-line:nth-child(2) .openui-card-card > div:nth-child(1) * {
+  color: #b3741b !important;
+}
+
+.sap-receipt-line:nth-child(3) {
+  background-color: #f4f7f6 !important;
+  border-left: 4px solid #4c6e51 !important;
+}
+
+.sap-receipt-line:nth-child(3) .openui-card-card > div:nth-child(1),
+.sap-receipt-line:nth-child(3) .openui-card-card > div:nth-child(1) * {
+  color: #4c6e51 !important;
+}
+
+.sap-receipt-line:nth-child(4) {
+  background-color: #f6f5f8 !important;
+  border-left: 4px solid #8a8478 !important;
+}
+
+.sap-receipt-line:nth-child(4) .openui-card-card > div:nth-child(1),
+.sap-receipt-line:nth-child(4) .openui-card-card > div:nth-child(1) * {
+  color: #6b6559 !important;
+}
+
+.sap-receipt-line:nth-child(5) {
+  background-color: #f9f4f4 !important;
+  border-left: 4px solid #b54a3f !important;
+}
+
+.sap-receipt-line:nth-child(5) .openui-card-card > div:nth-child(1),
+.sap-receipt-line:nth-child(5) .openui-card-card > div:nth-child(1) * {
+  color: #b54a3f !important;
+}
+
+.sap-receipt-line .openui-card-card {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  width: 100% !important;
+}
+
+.sap-receipt-line .openui-card-card > div:nth-child(1),
+.sap-receipt-line .openui-card-card > div:nth-child(1) * {
+  font-family: var(--openui-font-label) !important;
+  font-size: 11px !important;
+  font-weight: 550 !important;
+  letter-spacing: 0.05em !important;
+  text-transform: uppercase !important;
+}
+
+.sap-receipt-line .openui-card-card > div:nth-child(2),
+.sap-receipt-line .openui-card-card > div:nth-child(2) * {
+  font-family: var(--openui-font-numbers) !important;
+  font-size: 26px !important;
+  font-weight: 600 !important;
+  color: var(--ink) !important;
+  margin: 4px 0 !important;
+}
+
+.sap-receipt-line .openui-card-card > div:nth-child(3),
+.sap-receipt-line .openui-card-card > div:nth-child(3) * {
+  font-family: var(--openui-font-body) !important;
+  font-size: 11px !important;
+  color: #6C757D !important;
+}
+
+/* ── Callout overrides ── */
+.openui-text-callout {
+  background: var(--white) !important;
+  border-radius: 3px !important;
+  padding: 14px 18px !important;
+  border: 1px solid var(--line) !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.02) !important;
+}
+
+.openui-text-callout-success { border-left: 4px solid var(--green) !important; }
+.openui-text-callout-warning { border-left: 4px solid var(--amber) !important; }
+.openui-text-callout-info { border-left: 4px solid var(--green-soft) !important; }
+.openui-text-callout-neutral { border-left: 4px solid var(--ink) !important; }
+
+.openui-text-callout-content-title {
+  color: var(--ink) !important;
+  font-size: 0.95rem !important;
+  font-family: var(--openui-font-heading) !important;
+  font-weight: 600 !important;
+}
+
+.openui-text-callout-content-description {
+  color: #5c6159 !important;
+  font-size: 0.85rem !important;
+}
+
+/* ── Button overrides ── */
+.openui-button {
+  font-family: var(--openui-font-label);
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 4px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.openui-button-primary {
+  background: var(--green);
+  color: var(--white);
+  border: none;
+}
+
+.openui-button-primary:hover {
+  background: var(--green-soft);
+}
+
+/* ── Chart palette ── */
+[data-chart-palette] {
+  --chart-1: #2F5233;
+  --chart-2: #4C6E51;
+  --chart-3: #A9BFA8;
+  --chart-4: #D99A3D;
+  --chart-5: #B54A3F;
+  --chart-6: #8A8478;
+  --chart-7: #6C757D;
+}
+
+.dashboard-input::placeholder {
+  color: #4B5563;
+  opacity: 0.8;
+}
+
+.recharts-bar-rectangle:hover path,
+.recharts-bar-rectangle:hover rect,
+.recharts-pie-sector:hover,
+.recharts-sector:hover {
+  filter: brightness(1.1);
+  transition: filter 0.15s ease;
+}
