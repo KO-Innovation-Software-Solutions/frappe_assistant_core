@@ -1,9 +1,10 @@
 import { useRef, useState } from "react";
-import { Send } from "lucide-react";
+import { Send, Plus, Clock, PanelLeft } from "lucide-react";
 import { DashboardProvider, useDashboard } from "./context";
 import { ConversationPanel } from "./ConversationPanel";
 import { DashboardCanvas } from "./DashboardCanvas";
 import { StarterGrid } from "./StarterGrid";
+import { HistoryPanel } from "./HistoryPanel";
 
 export { useDashboard } from "./context";
 
@@ -30,81 +31,135 @@ function getGreetingName() {
   return "there";
 }
 
+function RailButton({ active, onClick, title, children }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        width: 34, height: 34, borderRadius: 8, border: "none",
+        background: active ? THEME.green : hover ? "#EDE9FE" : "transparent",
+        color: active ? THEME.white : THEME.ink,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        cursor: "pointer", transition: "all 0.12s",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function IconRail() {
+  const { showHistory, setShowHistory, startNewSession } = useDashboard();
+
+  return (
+    <div style={{
+      width: 52, minWidth: 52, height: "100%",
+      background: "#FBFAFD", borderRight: `1px solid ${THEME.line}`,
+      display: "flex", flexDirection: "column", alignItems: "center",
+      padding: "12px 0", gap: 8, flexShrink: 0,
+    }}>
+      <span style={{
+        width: 28, height: 28, borderRadius: 4, marginBottom: 8,
+        background: THEME.green, display: "flex", alignItems: "center",
+        justifyContent: "center", fontSize: 14, color: THEME.white,
+        fontWeight: 700, fontFamily: "Fraunces, Georgia, serif",
+      }}>A</span>
+
+      <RailButton title={showHistory ? "Collapse" : "Expand history"} onClick={() => setShowHistory(!showHistory)}>
+        <PanelLeft size={17} strokeWidth={1.75} />
+      </RailButton>
+
+      <RailButton title="New Dashboard" onClick={startNewSession}>
+        <Plus size={18} strokeWidth={2} />
+      </RailButton>
+
+      <RailButton title="History" active={showHistory} onClick={() => setShowHistory(true)}>
+        <Clock size={17} strokeWidth={1.75} />
+      </RailButton>
+    </div>
+  );
+}
+
 function DashboardLayout({ library, starters }) {
-  const { conversation, dashboardCode, isStreaming, clear } = useDashboard();
+  const { conversation, dashboardCode, isStreaming, clear, showHistory, setShowHistory } = useDashboard();
   const hasDashboard = dashboardCode !== null;
   const isEmpty = conversation.length === 0 && !hasDashboard;
 
   return (
     <div style={{
-      minHeight: "100vh",
+      height: "100vh",
       background: THEME.paper,
       fontFamily: "'Inter', system-ui, sans-serif",
       color: THEME.ink,
+      display: "flex",
     }}>
-      {/* Header */}
-      <div style={{
-        background: TOP_BAR_BG,
-        padding: "12px 28px",
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-        position: "sticky",
-        top: 0,
-        zIndex: 20,
-      }}>
-        <span style={{
-          width: 28, height: 28, borderRadius: 4,
-          background: THEME.green,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 14, color: THEME.white, fontWeight: 700,
-          fontFamily: "Fraunces, Georgia, serif",
-        }}>A</span>
-        <h1 style={{
-          fontSize: 15, fontWeight: 600, margin: 0, color: THEME.ink,
-          letterSpacing: "-0.01em", fontFamily: "Fraunces, Georgia, serif",
-        }}>AIKO</h1>
-        <span style={{
-          fontSize: 12, color: "#8A8478", paddingLeft: 10,
-          borderLeft: `1px solid ${THEME.line}`,
-          fontFamily: "Inter, sans-serif",
-        }}>Dashboard Assistant</span>
+      <IconRail />
 
-        <div style={{ marginLeft: "auto" }} />
+      {showHistory && <HistoryPanel onClose={() => setShowHistory(false)} />}
 
-        {(hasDashboard || conversation.length > 0) && (
-          <button onClick={clear} style={{
-            padding: "5px 14px", border: `1px solid ${THEME.line}`,
-            borderRadius: 3, background: "transparent", cursor: "pointer",
-            fontSize: 12, color: "#8A8478", fontWeight: 600,
-            fontFamily: "Inter, sans-serif", transition: "all 0.12s",
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = THEME.green; e.currentTarget.style.color = "white"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#8A8478"; }}
-          >
-            Clear
-          </button>
-        )}
-      </div>
+      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        {/* Header */}
+        <div style={{
+          background: TOP_BAR_BG,
+          padding: "12px 28px",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          flexShrink: 0,
+        }}>
+          <h1 style={{
+            fontSize: 15, fontWeight: 600, margin: 0, color: THEME.ink,
+            letterSpacing: "-0.01em", fontFamily: "Fraunces, Georgia, serif",
+          }}>AIKO</h1>
+          <span style={{
+            fontSize: 12, color: "#8A8478", paddingLeft: 10,
+            borderLeft: `1px solid ${THEME.line}`,
+            fontFamily: "Inter, sans-serif",
+          }}>Dashboard Assistant</span>
 
-      {/* Body */}
-      {isEmpty ? (
-        <EmptyState starters={starters} />
-      ) : (
-        <div style={{ display: "flex", height: "calc(100vh - 49px)" }}>
-          <div style={{
-            flex: hasDashboard ? "1 1 60%" : "1 1 100%",
-            overflow: "auto", padding: 24, transition: "flex 0.3s",
-          }}>
-            <DashboardCanvas library={library} />
-          </div>
-          {(conversation.length > 0 || isStreaming) && <ConversationPanel />}
+          <div style={{ marginLeft: "auto" }} />
+
+          {(hasDashboard || conversation.length > 0) && (
+            <button onClick={clear} style={{
+              padding: "5px 14px", border: `1px solid ${THEME.line}`,
+              borderRadius: 3, background: "transparent", cursor: "pointer",
+              fontSize: 12, color: "#8A8478", fontWeight: 600,
+              fontFamily: "Inter, sans-serif", transition: "all 0.12s",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = THEME.green; e.currentTarget.style.color = "white"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#8A8478"; }}
+            >
+              Clear
+            </button>
+          )}
         </div>
-      )}
+
+        {/* Body */}
+        <div style={{ flex: 1, overflow: "hidden" }}>
+          {isEmpty ? (
+            <div style={{ height: "100%", overflow: "auto" }}>
+              <EmptyState starters={starters} />
+            </div>
+          ) : (
+            <div style={{ display: "flex", height: "100%" }}>
+              <div style={{
+                flex: hasDashboard ? "1 1 60%" : "1 1 100%",
+                overflow: "auto", padding: 24, transition: "flex 0.3s",
+              }}>
+                <DashboardCanvas library={library} />
+              </div>
+              {(conversation.length > 0 || isStreaming) && <ConversationPanel />}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
-
 function EmptyState({ starters }) {
   const name = getGreetingName();
   const hour = new Date().getHours();
@@ -112,7 +167,7 @@ function EmptyState({ starters }) {
 
   return (
     <div style={{
-      minHeight: "calc(100vh - 49px)",
+      minHeight: "100%",
       display: "flex",
       flexDirection: "column",
       alignItems: "center",

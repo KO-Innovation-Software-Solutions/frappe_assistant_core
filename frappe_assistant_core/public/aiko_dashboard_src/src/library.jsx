@@ -160,10 +160,12 @@ export const library = createLibrary({
             const result = original(args);
             if (result && result.props && result.props.labels && result.props.series) {
               const aggregated = aggregateLabels(result.props.labels, result.props.series);
-              return { ...result, props: { ...result.props, ...aggregated, customPalette: SAP_PALETTE } };
+              const palette = pickPalette(aggregated); // ← use aggregated, not raw props
+              return { ...result, props: { ...result.props, ...aggregated, customPalette: palette } };
             }
             if (result && result.props) {
-              return { ...result, props: { ...result.props, customPalette: SAP_PALETTE } };
+              const palette = pickPalette(result.props);
+              return { ...result, props: { ...result.props, customPalette: palette } };
             }
             return result;
           },

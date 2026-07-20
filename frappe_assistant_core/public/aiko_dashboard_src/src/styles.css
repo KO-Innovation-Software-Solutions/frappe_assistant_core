@@ -439,3 +439,35 @@ body {
   filter: brightness(1.1);
   transition: filter 0.15s ease;
 }
+/* Markdown content inside conversation bubbles */
+.openui-markdown-renderer, .openui-markdown-renderer * {
+  font-family: "Inter", sans-serif;
+}
+.openui-markdown-renderer p { margin: 0 0 8px 0; line-height: 1.55; }
+.openui-markdown-renderer p:last-child { margin-bottom: 0; }
+.openui-markdown-renderer strong { color: #1F2621; font-weight: 700; }
+.openui-markdown-renderer ul, .openui-markdown-renderer ol {
+  margin: 4px 0 8px 18px; padding: 0;
+}
+.openui-markdown-renderer li { margin-bottom: 3px; line-height: 1.5; }
+.openui-markdown-renderer code {
+  background: #F5F3FF; color: #6D28D9; padding: 1px 5px;
+  border-radius: 3px; font-family: "IBM Plex Mono", monospace; font-size: 12px;
+}
+.openui-markdown-renderer table {
+  width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 12.5px;
+}
+.openui-markdown-renderer th {
+  background: #F5F3FF; padding: 6px 8px; text-align: left;
+  font-weight: 600; border-bottom: 2px solid #DDD6FE; color: #5B21B6;
+}
+.openui-markdown-renderer td {
+  padding: 6px 8px; border-bottom: 1px solid #EDE9FE;
+}
+.openui-markdown-renderer h1, .openui-markdown-renderer h2, .openui-markdown-renderer h3 {
+  font-family: "Fraunces", Georgia, serif; margin: 10px 0 6px 0; color: #1F2621;
+}
+.openui-markdown-renderer blockquote {
+  border-left: 3px solid #A78BFA; margin: 6px 0; padding: 2px 12px;
+  color: #5B5650; font-style: italic;
+}

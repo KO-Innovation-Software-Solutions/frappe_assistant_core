@@ -1,6 +1,7 @@
 {
  "actions": [],
- "creation": "2026-07-13 00:00:00.000000",
+ "autoname": "AIKO-DASH-.#####",
+ "creation": "2026-07-13 00:00:00",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -8,24 +9,31 @@
   "user",
   "title",
   "message_count",
-  "last_active"
+  "last_active",
+  "total_tokens",
+  "llm_providers_used",
+  "llm_models_used",
+  "messages_section",
+  "conversation_html",
+  "messages_table_section",
+  "messages"
  ],
  "fields": [
   {
    "fieldname": "thread_id",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Thread ID",
-   "unique": 1,
    "reqd": 1,
-   "in_list_view": 1
+   "unique": 1
   },
   {
    "fieldname": "user",
    "fieldtype": "Link",
-   "options": "User",
+   "in_list_view": 1,
    "label": "User",
-   "reqd": 1,
-   "in_list_view": 1
+   "options": "User",
+   "reqd": 1
   },
   {
    "fieldname": "title",
@@ -33,21 +41,70 @@
    "label": "Title"
   },
   {
+   "default": "0",
    "fieldname": "message_count",
    "fieldtype": "Int",
-   "label": "Message Count",
-   "default": "0"
+   "label": "Message Count"
   },
   {
    "fieldname": "last_active",
    "fieldtype": "Datetime",
    "label": "Last Active"
+  },
+  {
+   "default": "0",
+   "fieldname": "total_tokens",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Total Tokens",
+   "read_only": 1
+  },
+  {
+   "description": "Providers used in this session, in the order they were first used (e.g. openai, ollama).",
+   "fieldname": "llm_providers_used",
+   "fieldtype": "Data",
+   "label": "Providers Used",
+   "read_only": 1
+  },
+  {
+   "description": "Models used in this session, in the order they were first used.",
+   "fieldname": "llm_models_used",
+   "fieldtype": "Data",
+   "label": "Models Used",
+   "read_only": 1
+  },
+  {
+   "fieldname": "messages_section",
+   "fieldtype": "Section Break",
+   "label": "Conversation View"
+  },
+  {
+   "fieldname": "conversation_html",
+   "fieldtype": "HTML",
+   "label": "Conversation",
+   "options": "<div id=\"aiko-dashboard-conversation-view\"><p style=\"color:#888;\">Loading conversation...</p></div>"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "messages_table_section",
+   "fieldtype": "Section Break",
+   "label": "Message Log (Raw Data)"
+  },
+  {
+   "fieldname": "messages",
+   "fieldtype": "Table",
+   "label": "Messages",
+   "options": "Aiko Dashboard Session Message",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
+ "modified": "2026-07-19 18:47:41.226833",
+ "modified_by": "Administrator",
  "module": "Assistant Core",
  "name": "Aiko Dashboard Session",
+ "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
   {
@@ -63,7 +120,9 @@
    "write": 1
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
+ "states": [],
  "track_changes": 1
 }

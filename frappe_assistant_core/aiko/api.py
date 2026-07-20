@@ -349,6 +349,53 @@ def run_dashboard_job_sync(message: str, thread_id: str, user: str, request_id: 
     asyncio.run(run_dashboard_job(message, thread_id, user, request_id))
 
 @frappe.whitelist()
+def list_dashboard_sessions(limit: int = 50):
+    if not frappe.session.user or frappe.session.user == "Guest":
+        frappe.throw(_("Authentication required"))
+    sessions = frappe.db.sql(
+        """
+        SELECT
+            s.name, s.thread_id, s.title, s.last_active, s.message_count, s.creation,
+            (SELECT m.content FROM `tabAiko Dashboard Message` m
+             WHERE m.session = s.name AND m.role = 'user' ORDER BY m.creation DESC LIMIT 1) AS last_message,
+            (SELECT m2.content FROM `tabAiko Dashboard Message` m2
+             WHERE m2.session = s.name AND m2.role = 'user' ORDER BY m2.creation ASC LIMIT 1) AS first_message
+        FROM `tabAiko Dashboard Session` s
+        WHERE s.user = %s
+        ORDER BY COALESCE(s.last_active, s.creation) DESC
+        LIMIT %s
+        """,
+        (frappe.session.user, limit),
+        as_dict=True,
+    )
+    for s in sessions:
+        last_msg = (s.pop("last_message", None) or "").strip()
+        first_msg = (s.pop("first_message", None) or "").strip()
+        s["preview"] = last_msg or first_msg or ""
+    return sessions
+
+
+@frappe.whitelist()
+def get_dashboard_session_messages(thread_id: str):
+    if not frappe.session.user or frappe.session.user == "Guest":
+        frappe.throw(_("Authentication required"))
+    session_name = frappe.db.get_value(
+        "Aiko Dashboard Session",
+        {"thread_id": thread_id, "user": frappe.session.user},
+        "name",
+    )
+    if not session_name:
+        return {"thread_id": thread_id, "messages": []}
+
+    messages = frappe.db.get_list(
+        "Aiko Dashboard Message",
+        filters={"session": session_name},
+        fields=["role", "content", "ui", "creation"],
+        order_by="creation asc",
+    )
+    return {"thread_id": thread_id, "messages": messages}
+
+@frappe.whitelist()
 def dashboard_chat(message: str, thread_id: str, request_id: str = None):
     if not frappe.session.user or frappe.session.user == "Guest":
         frappe.throw(_("Authentication required"))
