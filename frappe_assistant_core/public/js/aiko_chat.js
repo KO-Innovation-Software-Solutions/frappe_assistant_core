@@ -216,9 +216,9 @@ $(document).ready(function () {
         let onFullPage = false;
         if (typeof frappe.get_route === 'function') {
             const route = frappe.get_route();
-            onFullPage = route && route[0] === 'aiko-chat';
+            onFullPage = route && (route[0] === 'aiko-chat' || route[0] === 'aiko-dashboard');
         } else {
-            onFullPage = window.location.pathname.includes('/aiko_chat');
+            onFullPage = window.location.pathname.includes('/aiko_chat') || window.location.pathname.includes('/aiko-dashboard');
         }
 
         if (sessionStorage.getItem('aiko_open_widget') === '1') {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, Fragment } from "react";
 import { MessageCircle } from "lucide-react";
 import { MarkDownRenderer } from "@openuidev/react-ui";
 import { useDashboard } from "./context";
@@ -19,6 +19,24 @@ const THEME = {
   paper: "#F6F5F9",
   white: "#FFFFFF",
 };
+function fixCrampedMarkdownTables(text) {
+  if (!text || typeof text !== "string") return text;
+
+  return text
+    .split("\n")
+    .map((line) => {
+      if (!line.includes("|")) return line;
+      const pipeCount = (line.match(/\|/g) || []).length;
+      if (pipeCount < 5) return line;
+      let fixed = line
+        .replace(/(\|[\s-]*\|[\s-]*\|(?:[\s-]*\|)*)/g, "\n$1\n")
+        .replace(/\s*\|\s*\|\s*/g, " |\n| ");
+      return fixed;
+    })
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
 
 function ToolCallBadge({ tool }) {
   const statusColor = tool.status === "completed" ? THEME.green
@@ -144,7 +162,20 @@ export function ConversationPanel() {
                 marginLeft: 40, fontFamily: "Inter, sans-serif",
               }}>{msg.content}</div>
             ) : (
-              <AssistantMessage msg={msg} />
+              <Fragment>
+                <AssistantMessage msg={msg} />
+                {msg.suggestions?.length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                    {msg.suggestions.map((q, j) => (
+                      <button key={j} onClick={() => send(q)} style={{
+                        padding: "6px 12px", borderRadius: 14, border: "1px solid #DDD6FE",
+                        background: "#F5F3FF", color: "#6D28D9", fontSize: 12, fontWeight: 600,
+                        cursor: "pointer", fontFamily: "Inter, sans-serif",
+                      }}>{q}</button>
+                    ))}
+                  </div>
+                )}
+              </Fragment>
             )}
           </div>
         ))}
