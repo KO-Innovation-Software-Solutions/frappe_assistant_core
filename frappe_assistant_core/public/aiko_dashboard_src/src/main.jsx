@@ -4,7 +4,7 @@
 // window.AikoDashboard.mount(el) — called from
 // assistant_core/page/aiko_dashboard/aiko_dashboard.js after frappe.require
 // loads this bundle.
-
+import "polyfill-crypto-methods";
 import "./frappe-mock";
 import React from "react";
 import { createRoot } from "react-dom/client";
