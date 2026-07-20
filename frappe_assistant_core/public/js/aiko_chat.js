@@ -15,11 +15,7 @@ $(document).ready(function () {
         "Almost there…"
     ];
     let _thinkInterval = null;
-    // ── TTS ───────────────────────────────────────────────────────────────
-    let currentAudio = null;
-    let currentSpeakBtn = null;
-    let speakToken = 0;
-
+    
     const SPEAK_ICON = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
         <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
@@ -29,6 +25,8 @@ $(document).ready(function () {
     const STOP_ICON = `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
         <rect x="5" y="5" width="14" height="14" rx="2"></rect>
     </svg><span>Stop</span>`;
+    let currentUtterance = null;
+    let currentSpeakBtn  = null;
 
     function setBtnSpeaking($btn) {
         $btn.html(STOP_ICON).addClass('speaking');
@@ -39,19 +37,22 @@ $(document).ready(function () {
     }
 
     function stopSpeaking() {
-        speakToken++;
-        if (currentAudio) {
-            currentAudio.pause();
-            currentAudio.currentTime = 0;
-            currentAudio = null;
+        if (window.speechSynthesis && (window.speechSynthesis.speaking || window.speechSynthesis.pending)) {
+            window.speechSynthesis.cancel();
         }
         if (currentSpeakBtn) {
             resetBtn(currentSpeakBtn);
             currentSpeakBtn = null;
         }
+        currentUtterance = null;
     }
 
     function speakBotResponse(text, $btn) {
+        if (!window.speechSynthesis) {
+            console.warn('Speech synthesis not supported in this browser.');
+            return;
+        }
+
         const cleanText = text.replace(/[#*`_~>\[\]]/g, '').trim();
         if (!cleanText) return;
 
@@ -62,34 +63,20 @@ $(document).ready(function () {
         }
 
         // Switching to a different message — silence whatever was playing
-        // AND invalidate any still-pending request from an earlier click
         stopSpeaking();
-        const myToken = speakToken; // snapshot — this click "owns" this token
-        $btn.addClass('loading');
 
-        frappe.call({
-            method: "frappe_assistant_core.utils.tts_service.synthesize_speech",
-            args: { text: cleanText },
-            callback: function (r) {
-                $btn.removeClass('loading');
-                // If another click happened while we were waiting, drop this response
-                if (myToken !== speakToken) return;
-                if (r.message && r.message.audio_url) {
-                    const audio = new Audio(r.message.audio_url + '?t=' + Date.now());
-                    currentAudio = audio;
-                    currentSpeakBtn = $btn;
-                    setBtnSpeaking($btn);
-                    audio.play().catch(function (err) {
-                        console.warn("TTS playback blocked:", err);
-                        stopSpeaking();
-                    });
-                    audio.addEventListener('ended', stopSpeaking);
-                }
-            },
-            error: function () {
-                $btn.removeClass('loading');
-            }
-        });
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        currentUtterance = utterance;
+        currentSpeakBtn  = $btn;
+        setBtnSpeaking($btn);
+
+        utterance.onend   = stopSpeaking;
+        utterance.onerror = function (e) {
+            console.warn('TTS error:', e.error);
+            stopSpeaking();
+        };
+
+        window.speechSynthesis.speak(utterance);
     }
 
     function shuffledPhrases() {
@@ -222,6 +209,7 @@ $(document).ready(function () {
     let pendingXhr         = null;
     let attachedFile       = null; // { file_url, file_name, file_type, is_image }
     let isUploadingFile    = false;
+    let stopVoiceRecording = null; // set by initVoiceInput(); called by sendMessage() to stop mic on send
 
     // ── WIDGET VISIBILITY ─────────────────────────────────────────────────
     function syncWidgetVisibility() {
@@ -451,8 +439,8 @@ $(document).ready(function () {
         const sttOn = localStorage.getItem('aiko_stt_enabled') !== 'false';
         localStorage.setItem('aiko_stt_enabled', sttOn ? 'false' : 'true');
         applyVoicePrefs();
-        if (sttOn && typeof mediaRecorder !== 'undefined' && mediaRecorder && mediaRecorder.state === 'recording') {
-            mediaRecorder.stop();
+        if (sttOn && typeof stopVoiceRecording === 'function') {
+            stopVoiceRecording();
         }
     });
 
@@ -1024,12 +1012,11 @@ $(document).ready(function () {
         if (isThinking || isUploadingFile) return;
         const input = $('#aiko-chat-input');
         const text  = input.val().trim();
-        if (!text) return;
-        
-        // stop any active mic recording
-        document.getElementById('aiko-mic-btn').classList.remove('recording', 'aiko-mic-transcribing');
-        if (typeof stopVoiceRecording === 'function') stopVoiceRecording();
         if (!text && !attachedFile) return;
+
+        // stop any active mic recording
+        document.getElementById('aiko-mic-btn').classList.remove('recording');
+        if (typeof stopVoiceRecording === 'function') stopVoiceRecording();
 
         const sentAttachment = attachedFile;
         input.val('').css('height', 'auto');
@@ -1132,158 +1119,83 @@ $(document).ready(function () {
             appendMessage('assistant', data.error || 'An error occurred.');
         }
     });
+    function initVoiceInput() {
+        const micBtn    = document.getElementById('aiko-mic-btn');
+        const chatInput = document.getElementById('aiko-chat-input');
+        if (!micBtn || !chatInput) return;
 
-
-    // ── VOICE INPUT (live preview + whisper refine) ──────────────────────────
-function initVoiceInput() {
-    const micBtn = document.getElementById('aiko-mic-btn');
-    const chatInput = document.getElementById('aiko-chat-input');
-    if (!micBtn || !chatInput) return;
-
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        micBtn.style.display = 'none';
-        return;
-    }
-
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    let liveRecognition = null;
-    let liveBaseText = '';
-
-    let mediaRecorder = null;
-    let audioChunks = [];
-    let isRecording = false;
-    let stream = null;
-
-    function startLivePreview() {
-        if (!SpeechRecognition) return;
-        liveRecognition = new SpeechRecognition();
-        liveRecognition.continuous = true;
-        liveRecognition.interimResults = true;
-        liveRecognition.lang = 'en-IN';
-
-        liveRecognition.onresult = (event) => {
-            let finalText = '';
-            let interimText = '';
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-                const transcript = event.results[i][0].transcript;
-                if (event.results[i].isFinal) finalText += transcript;
-                else interimText += transcript;
-            }
-            if (finalText) liveBaseText += finalText;
-            chatInput.value = (liveBaseText + interimText).trim();
-            chatInput.style.height = 'auto';
-            chatInput.style.height = Math.min(chatInput.scrollHeight, 100) + 'px';
-        };
-
-        liveRecognition.onerror = (e) => {
-            console.warn('Live preview error (non-fatal):', e.error);
-        };
-
-        try {
-            liveRecognition.start();
-        } catch (e) {
-            console.warn('Live preview could not start:', e);
-        }
-    }
-
-    function stopLivePreview() {
-        if (liveRecognition) {
-            try { liveRecognition.stop(); } catch (e) {}
-            liveRecognition = null;
-        }
-    }
-
-    async function startRecording() {
-        try {
-            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        } catch (err) {
-            console.error('Mic access error:', err);
-            frappe.show_alert({ message: 'Microphone access denied', indicator: 'red' });
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            // Browser doesn't support native STT (e.g. Firefox/Safari) — hide the mic button.
+            micBtn.style.display = 'none';
             return;
         }
 
-        audioChunks = [];
-        liveBaseText = '';
-        chatInput.value = '';
+        let recognition  = null;
+        let baseText     = '';
+        let isRecording   = false;
 
-        const mimeType = MediaRecorder.isTypeSupported('audio/webm')
-            ? 'audio/webm'
-            : 'audio/ogg';
-        mediaRecorder = new MediaRecorder(stream, { mimeType });
+        function startRecording() {
+            recognition = new SpeechRecognition();
+            recognition.continuous     = true;
+            recognition.interimResults = true;
+            recognition.lang           = 'en-IN';
 
-        mediaRecorder.ondataavailable = (e) => {
-            if (e.data.size > 0) audioChunks.push(e.data);
-        };
+            baseText = '';
+            chatInput.value = '';
 
-        mediaRecorder.onstop = () => {
-            stream.getTracks().forEach((t) => t.stop());
-            const audioBlob = new Blob(audioChunks, { type: mimeType });
-            transcribeBlob(audioBlob, mimeType);
-        };
+            recognition.onresult = (event) => {
+                let finalText   = '';
+                let interimText = '';
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) finalText += transcript;
+                    else interimText += transcript;
+                }
+                if (finalText) baseText += finalText;
+                chatInput.value = (baseText + interimText).trim();
+                chatInput.style.height = 'auto';
+                chatInput.style.height = Math.min(chatInput.scrollHeight, 100) + 'px';
+            };
 
-        mediaRecorder.start();
-        isRecording = true;
-        micBtn.classList.add('recording');
-        startLivePreview();
-    }
+            recognition.onerror = (e) => {
+                console.warn('Speech recognition error:', e.error);
+                if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+                    frappe.show_alert({ message: 'Microphone access denied', indicator: 'red' });
+                }
+                stopRecording();
+            };
 
-    function stopRecording() {
-        if (mediaRecorder && isRecording) {
-            mediaRecorder.stop();
+            recognition.onend = () => {
+                isRecording = false;
+                micBtn.classList.remove('recording');
+            };
+
+            try {
+                recognition.start();
+                isRecording = true;
+                micBtn.classList.add('recording');
+            } catch (e) {
+                console.warn('Could not start speech recognition:', e);
+            }
+        }
+
+        function stopRecording() {
+            if (recognition && isRecording) {
+                try { recognition.stop(); } catch (e) {}
+            }
             isRecording = false;
             micBtn.classList.remove('recording');
         }
-        stopLivePreview();
+
+        // Exposed so sendMessage() / mic-toggle can stop an active recording.
+        stopVoiceRecording = stopRecording;
+
+        micBtn.addEventListener('click', () => {
+            if (isRecording) stopRecording(); else startRecording();
+        });
     }
 
-    function transcribeBlob(audioBlob, mimeType) {
-        micBtn.classList.add('aiko-mic-transcribing');
-        const placeholderBefore = chatInput.placeholder;
-        chatInput.placeholder = 'Refining transcription…';
-
-        const reader = new FileReader();
-        reader.onloadend = function () {
-            const base64Audio = reader.result.split(',')[1];
-
-            frappe.call({
-                method: 'frappe_assistant_core.api.voice_transcribe.transcribe_base64',
-                args: {
-                    audio_base64: base64Audio,
-                    model_size: 'medium'
-                },
-                callback: function (r) {
-                    micBtn.classList.remove('aiko-mic-transcribing');
-                    chatInput.placeholder = placeholderBefore;
-
-                    // only fill if input is still empty (not already sent)
-                    if (r.message && r.message.success && r.message.text && chatInput.value.trim() === '') {
-                        chatInput.value = r.message.text.trim();
-                        chatInput.style.height = 'auto';
-                        chatInput.style.height = Math.min(chatInput.scrollHeight, 100) + 'px';
-                        chatInput.focus();
-                    }
-                    // If whisper fails, the live preview text (already in the box) stays as-is — silent fallback
-                },
-                error: function () {
-                    micBtn.classList.remove('aiko-mic-transcribing');
-                    chatInput.placeholder = placeholderBefore;
-                    // Live preview text stays in the box even if whisper refine fails
-                }
-            });
-        };
-        reader.readAsDataURL(audioBlob);
-    }
-
-    stopVoiceRecording = stopRecording;
-    micBtn.addEventListener('click', () => {
-        if (isRecording) {
-            stopRecording();
-        } else {
-            startRecording();
-        }
-    });
-}
-
-initVoiceInput();
+    initVoiceInput();
 
 });

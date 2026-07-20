@@ -38,10 +38,6 @@ app_include_js = "/assets/frappe_assistant_core/js/aiko_chat.js"
 web_include_css = "/assets/frappe_assistant_core/www/aiko_chat.css"
 web_include_js = "/assets/frappe_assistant_core/www/aiko_chat.js"
 
-# TTS
-tts_whitelist = [
-    "frappe_assistant_core.utils.tts_service.synthesize_speech"
-]
 # include custom scss in every website theme (without file extension ".scss")
 # website_theme_scss = "frappe_assistant_core/public/scss/website"
 
