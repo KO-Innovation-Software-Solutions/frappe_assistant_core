@@ -1,3 +1,24 @@
+# Frappe Assistant Core - AI Assistant integration for Frappe Framework
+# Copyright (C) 2025 Paul Clinton
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+"""
+File Content Extraction Tool for Data Science Plugin.
+Extracts content from various file formats (PDF, images, CSV, Excel, documents) for LLM processing.
+"""
+
 import base64
 import importlib.util
 import io
@@ -489,11 +510,9 @@ class ExtractFileContent(BaseTool):
                 return result
             return self._missing_paddle_ocr_response()
 
-        # Tesseract path — explicit choice. Body lifted from pre-#99 (commit 736b3fc),
-        # extended with PDF support (page rasterization via PyMuPDF, mirroring the
-        # Ollama PDF path) since the original tesseract path only ever accepted images.
+        # Tesseract path — explicit choice. Body lifted from pre-#99 (commit 736b3fc).
         if ocr_settings.get("backend") == "tesseract":
-            return self._perform_tesseract_ocr(file_content, arguments, file_type=file_type)
+            return self._perform_tesseract_ocr(file_content, arguments)
 
         # PaddleOCR path (default)
         if not self._is_paddle_ocr_available():
@@ -618,79 +637,35 @@ class ExtractFileContent(BaseTool):
             except OSError:
                 pass
 
-    def _perform_tesseract_ocr(
-        self, file_content: bytes, arguments: Dict[str, Any], file_type: str = "image"
-    ) -> Dict[str, Any]:
-        """Perform OCR on image or PDF content using Tesseract.
-
-        For PDFs, each page is rasterized to an image via PyMuPDF before
-        being passed to Tesseract (Tesseract itself only accepts images).
-        """
+    def _perform_tesseract_ocr(self, file_content: bytes, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Perform OCR on image content"""
         try:
-            import pytesseract
-            from PIL import Image
-        except ImportError:
-            return {
-                "success": False,
-                "error": "OCR dependencies not installed. Please install pytesseract and Pillow.",
-                "install_command": "pip install pytesseract pillow",
-            }
-
-        try:
-            pytesseract.get_tesseract_version()
-        except Exception:
-            return {
-                "success": False,
-                "error": "Tesseract OCR not installed on system. Please install tesseract-ocr.",
-                "install_command": "sudo apt-get install tesseract-ocr (Linux) or brew install tesseract (Mac)",
-            }
-
-        language = arguments.get("language", "eng")
-
-        try:
-            if file_type == "pdf":
-                try:
-                    import fitz  # PyMuPDF
-                except ImportError:
-                    return {
-                        "success": False,
-                        "error": "PyMuPDF (fitz) is required for Tesseract PDF OCR. Install with: pip install pymupdf",
-                    }
-
-                pdf_doc = fitz.open(stream=file_content, filetype="pdf")
-                max_pages = arguments.get("max_pages", 50)
-                num_pages = min(len(pdf_doc), max_pages)
-
-                text_parts = []
-                for i in range(num_pages):
-                    page = pdf_doc[i]
-                    pix = page.get_pixmap(dpi=200)
-                    pil_image = pix.pil_image()
-                    page_text = pytesseract.image_to_string(pil_image, lang=language)
-                    if page_text.strip():
-                        text_parts.append(f"--- Page {i + 1} ---\n{page_text}")
-
-                pdf_doc.close()
-                combined = "\n\n".join(text_parts)
-
-                if not combined.strip():
-                    return {
-                        "success": True,
-                        "content": "",
-                        "message": "OCR completed but no text was detected in the PDF pages.",
-                        "pages": num_pages,
-                    }
-
+            # Check if pytesseract is available
+            try:
+                import pytesseract
+                from PIL import Image
+            except ImportError:
                 return {
-                    "success": True,
-                    "content": combined,
-                    "pages": num_pages,
-                    "ocr_pages_with_text": len(text_parts),
-                    "ocr_language": language,
+                    "success": False,
+                    "error": "OCR dependencies not installed. Please install pytesseract and Pillow.",
+                    "install_command": "pip install pytesseract pillow",
                 }
 
-            # Image path
+            # Check if tesseract is installed on system
+            try:
+                pytesseract.get_tesseract_version()
+            except Exception:
+                return {
+                    "success": False,
+                    "error": "Tesseract OCR not installed on system. Please install tesseract-ocr.",
+                    "install_command": "sudo apt-get install tesseract-ocr (Linux) or brew install tesseract (Mac)",
+                }
+
+            # Open image
             image = Image.open(io.BytesIO(file_content))
+
+            # Perform OCR
+            language = arguments.get("language", "eng")
             extracted_text = pytesseract.image_to_string(image, lang=language)
 
             if not extracted_text.strip():
@@ -699,10 +674,12 @@ class ExtractFileContent(BaseTool):
             return {"success": True, "content": extracted_text, "ocr_language": language}
 
         except Exception as e:
+            # Fallback message if OCR fails
             return {
-                "success": False,
-                "error": f"Tesseract OCR failed: {str(e)}",
-                "ocr_backend": "tesseract",
+                "success": True,
+                "content": "[OCR not available - image file detected]",
+                "message": f"OCR failed: {str(e)}. To enable OCR, install tesseract-ocr system package.",
+                "fallback": True,
             }
 
     def _check_available_memory(self, required_mb: int) -> None:
@@ -1021,3 +998,6 @@ class ExtractFileContent(BaseTool):
         except Exception as e:
             return {"success": False, "error": f"Table extraction error: {str(e)}"}
 
+
+# Make sure class is available for discovery
+# The plugin manager will find ExtractFileContent automatically
