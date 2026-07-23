@@ -30,10 +30,7 @@ app_version = app_version
 # ------------------
 
 # include js, css files in header of desk.html
-app_include_css = "/assets/frappe_assistant_core/css/aiko_chat.css"
-app_include_js = "/assets/frappe_assistant_core/js/aiko_chat.js"
-
-
+app_include_js = "/assets/frappe_assistant_core/premium-ai-widget/dist/js/index.js"#app_include_js = "/assets/frappe_assistant_core/premium-ai-widget/js/index.js"
 # include js, css files in header of web template
 web_include_css = "/assets/frappe_assistant_core/www/aiko_chat.css"
 web_include_js = "/assets/frappe_assistant_core/www/aiko_chat.js"

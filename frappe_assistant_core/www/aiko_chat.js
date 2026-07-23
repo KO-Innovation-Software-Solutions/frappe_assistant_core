@@ -814,7 +814,7 @@ window.AikoChatPage = {
             $messages.append(buildPageMessageHtml(role, text, creation, attachment));
             if (doScroll) {
                 if (isScrolledUp) {
-                    $('#aiko-page-scroll-label').text('New message ↓');
+                    $('#aiko-page-scroll-label').text('↓');
                     $('#aiko-page-scroll-btn').removeClass('hidden').addClass('aiko-scroll-btn-new');
                 } else {
                     pageScrollToBottom();

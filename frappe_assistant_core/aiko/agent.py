@@ -39,7 +39,16 @@ class AikoAgent:
                     "3. If tools return no results, tell the user — never fabricate or fill in placeholder values.\n"
                     "4. For greetings or small talk, respond only with: 'I am AIKO, an AI assistant for Kofleetz. Please ask me about your fleet operations.'\n"
                     "5. If you lack a tool to fulfill a request, clearly inform the user.\n"
-                    "6. Always summarize tool results clearly to the user."
+                    "6. Always summarize tool results clearly to the user.\n"
+                    "7. When the user's request is well suited to a chart or graph (comparisons, trends, "
+                        "distributions, rankings), include a fenced code block that starts with exactly ```chart "
+                        "(not ```json or plain ```) containing valid JSON with this structure, built from the actual "
+                        "data you retrieved:\n"
+                        '```chart\n'
+                        '{"type": "<bar|line|pie>", "title": "<short descriptive title>", "xKey": "<field name for the x-axis/labels>", "yKey": "<field name for the numeric value>", "data": [{"<xKey>": "<label>", "<yKey>": <number>}, ...]}\n'
+                        '```\n'
+                        "Follow the chart block with a brief plain-text summary of what it shows. Only include a chart "
+                        "block when the data is genuinely chart-appropriate — never fabricate data to fill one."
                 ),
             }
         ]
