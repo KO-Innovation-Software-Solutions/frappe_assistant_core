@@ -57,6 +57,7 @@
 #premium-ai-widget-root .scrollbar-thin::-webkit-scrollbar-thumb:hover {
   background: #909090;
 }
+
 #premium-ai-widget-root .glass-panel {
   border: 1px solid rgba(255, 255, 255, 0.6);
   background: linear-gradient(160deg, rgba(237, 233, 254, 0.55), rgba(255, 255, 255, 0.65) 45%, rgba(221, 214, 254, 0.5));
@@ -78,6 +79,7 @@
     0 0 0 2px #ffffff,
     0 0 0 4px #a78bfa;
 }
+
 #premium-ai-widget-root .aiko-scroll-x {
   width: 100%;
   max-width: 100%;
@@ -89,15 +91,18 @@
   width: max-content;
   min-width: 100%;
 }
+
 #premium-ai-widget-root .aiko-scroll-y {
   overflow-y: auto !important;
   min-height: 0 !important;
   flex: 1 1 auto !important;
 }
+
 @keyframes aikoScaleIn {
   from { opacity: 0; transform: scale(0.9) translateY(8px); }
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
+
 #premium-ai-widget-root .aiko-panel-enter {
   animation: aikoScaleIn 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
