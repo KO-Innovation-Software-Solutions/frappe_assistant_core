@@ -18,13 +18,14 @@ function ToolButton({ label, children, onClick, active }) {
   )
 }
 
-export default function FloatingComposer({ input, setInput, onSend, onStop, isThinking, onAttach, attachedFile, isUploading, onRemoveAttachment }) {  const [isRecording, setIsRecording] = useState(false)
+export default function FloatingComposer({ input, setInput, onSend, onStop, isThinking, onAttach, attachedFile, isUploading, onRemoveAttachment, limitReached, onNewChat }) {
+  const [isRecording, setIsRecording] = useState(false)
   const recognitionRef = useRef(null)
   const fileInputRef = useRef(null)
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    if (isThinking) return
+    if (isThinking || limitReached) return
     onSend(input)
   }
 
@@ -88,31 +89,58 @@ export default function FloatingComposer({ input, setInput, onSend, onStop, isTh
   return (
     <footer className="shrink-0 border-t border-brand-100/80 bg-white/72 px-4 py-4 backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/70">
       {(attachedFile || isUploading) && (
-          <div className="mb-2 flex items-center gap-2 rounded-full border border-brand-100 bg-white/80 px-3 py-1.5 text-xs dark:border-white/10 dark:bg-white/10">
-            {isUploading ? (
-              <span className="text-slate-500 dark:text-slate-300">Uploading…</span>
-            ) : (
-              <>
-                <span className="truncate text-slate-700 dark:text-slate-200">{attachedFile.file_name}</span>
-                <button type="button" onClick={onRemoveAttachment} aria-label="Remove attachment" className="ml-auto text-slate-400 hover:text-red-500">✕</button>
-              </>
-            )}
-          </div>
-        )}
+        <div className="mb-2 flex items-center gap-2 rounded-full border border-brand-100 bg-white/80 px-3 py-1.5 text-xs dark:border-white/10 dark:bg-white/10">
+          {isUploading ? (
+            <span className="text-slate-500 dark:text-slate-300">Uploading…</span>
+          ) : (
+            <>
+              <span className="truncate text-slate-700 dark:text-slate-200">{attachedFile.file_name}</span>
+              <button type="button" onClick={onRemoveAttachment} aria-label="Remove attachment" className="ml-auto text-slate-400 hover:text-red-500">✕</button>
+            </>
+          )}
+        </div>
+      )}
+      {limitReached && (
+        <div className="mb-2 flex items-center justify-between gap-3 rounded-xl border border-brand-100 bg-brand-50 px-3 py-2 text-xs text-brand-700">
+          <span>This chat has reached 10 messages. Start a new session to continue.</span>
+          <button onClick={onNewChat} className="shrink-0 rounded-full bg-gradient-to-br from-brand-600 to-fuchsia-500 px-3 py-1 font-medium text-white">+ New Chat</button>
+        </div>
+      )}
       <form onSubmit={handleSubmit} className="flex items-center gap-2 rounded-full border border-white/70 bg-white/85 px-3 py-2 shadow-[0_10px_30px_rgba(88,56,255,0.10)] dark:border-white/10 dark:bg-white/10">
         <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileChange} />
         <ToolButton label="Voice input" onClick={toggleMic} active={isRecording}><MicIcon /></ToolButton>
         <ToolButton label="Attachment" onClick={handleAttachClick}><AttachIcon /></ToolButton>
-        <input
+        <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask anything or drop a file..."
-          className="flex-1 bg-transparent px-2 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none dark:text-white dark:placeholder:text-slate-400"
+          disabled={limitReached}
+          placeholder={limitReached ? 'Message limit reached.' : 'Ask anything or drop a file...'}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && isThinking) {
+              e.preventDefault()
+              return
+            }
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              if (!isThinking && !limitReached) onSend(input)
+            }
+          }}
+          rows={1}
+          className="max-h-24 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none dark:text-white dark:placeholder:text-slate-400"
+          style={{ overflowY: input.split('\n').length > 3 ? 'auto' : 'hidden' }}
+          onInput={(e) => {
+            e.target.style.height = 'auto'
+            e.target.style.height = Math.min(e.target.scrollHeight, 96) + 'px'
+          }}
         />
         {isThinking ? (
           <button
             type="button"
-            onClick={onStop}
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              onStop()
+            }}
             aria-label="Stop generating"
             className="grid h-10 min-w-[40px] place-items-center rounded-full bg-slate-700 px-3 text-white shadow-lg transition-all hover:bg-slate-800 focus-ring"
           >
@@ -121,8 +149,9 @@ export default function FloatingComposer({ input, setInput, onSend, onStop, isTh
         ) : (
           <button
             type="submit"
+            disabled={limitReached}
             aria-label="Send message"
-            className="grid h-10 min-w-[40px] place-items-center rounded-full bg-gradient-to-r from-brand-600 to-fuchsia-500 px-3 text-white shadow-lg transition-all hover:scale-[1.03] focus-ring"
+            className="grid h-10 min-w-[40px] place-items-center rounded-full bg-gradient-to-r from-brand-600 to-fuchsia-500 px-3 text-white shadow-lg transition-all hover:scale-[1.03] focus-ring disabled:opacity-50"
           >
             <SendIcon />
           </button>
