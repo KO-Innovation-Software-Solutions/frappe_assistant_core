@@ -106,3 +106,31 @@
 #premium-ai-widget-root .aiko-panel-enter {
   animation: aikoScaleIn 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
+@keyframes aikoScaleOut {
+  from { opacity: 1; transform: scale(1) translateY(0); }
+  to { opacity: 0; transform: scale(0.92) translateY(8px); }
+}
+
+#premium-ai-widget-root .aiko-panel-exit {
+  animation: aikoScaleOut 0.2s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+#premium-ai-widget-root .aiko-shimmer-text {
+  background: linear-gradient(
+    90deg,
+    #94a3b8 0%,
+    #94a3b8 35%,
+    #7c3aed 50%,
+    #94a3b8 65%,
+    #94a3b8 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: aikoShimmer 1.8s ease-in-out infinite;
+}
+
+@keyframes aikoShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
