@@ -3,16 +3,18 @@ import { Renderer } from "@openuidev/react-lang";
 import { ThemeProvider } from "@openuidev/react-ui";
 import { useDashboard } from "./context";
 
-function ToolbarButton({ label, color, dropdown, isOpen, onClick, icon }) {
+function ToolbarButton({ label, color, dropdown, isOpen, onClick, icon, disabled }) {
   return (
     <div style={{ position: "relative" }}>
       <button
         onClick={onClick}
+        disabled={disabled}
         style={{
           background: isOpen ? color : "white",
           border: `1px solid ${color}`,
           borderRadius: 4,
-          cursor: "pointer",
+          cursor: disabled ? "not-allowed" : "pointer",
+          opacity: disabled ? 0.5 : 1,
           color: isOpen ? "white" : color,
           fontSize: 11,
           fontWeight: 700,
@@ -24,8 +26,8 @@ function ToolbarButton({ label, color, dropdown, isOpen, onClick, icon }) {
           fontFamily: "Inter, sans-serif",
           letterSpacing: "0.02em",
         }}
-        onMouseEnter={(e) => { if (!isOpen) { e.currentTarget.style.background = color; e.currentTarget.style.color = "white"; } }}
-        onMouseLeave={(e) => { if (!isOpen) { e.currentTarget.style.background = "white"; e.currentTarget.style.color = color; } }}
+        onMouseEnter={(e) => { if (!isOpen && !disabled) { e.currentTarget.style.background = color; e.currentTarget.style.color = "white"; } }}
+        onMouseLeave={(e) => { if (!isOpen && !disabled) { e.currentTarget.style.background = "white"; e.currentTarget.style.color = color; } }}
       >
         {icon && <span>{icon}</span>}
         {label}
@@ -72,6 +74,7 @@ export function DashboardCanvas({ library }) {
     mailStatus, setMailStatus,
   } = useDashboard();
   const [showSource, setShowSource] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const dashboardRef = useRef(null);
 
   const closeAllDropdowns = useCallback(() => {
@@ -80,13 +83,70 @@ export function DashboardCanvas({ library }) {
     setShowScheduleMenu(false);
   }, []);
 
+  // Captures the dashboard element as a canvas, working around the
+  // html2canvas bug where content inside a scrollable ancestor gets
+  // captured at the wrong scroll offset (causing ghosting/duplication).
+  // Also freezes hover/animation transforms so the capture is crisp,
+  // and renders at a higher pixel density so exports aren't blurry.
+  const captureDashboard = useCallback(async () => {
+    const el = dashboardRef.current;
+    if (!el) return null;
+
+    const html2canvas = (await import("html2canvas-pro")).default;
+
+    // Find the actual scrollable ancestor (the canvas panel in index.jsx
+    // has overflow:auto) and remember + reset its scroll position so
+    // html2canvas captures from the true top instead of a ghosted offset.
+    let scrollParent = el.parentElement;
+    while (scrollParent && scrollParent !== document.body) {
+      const style = window.getComputedStyle(scrollParent);
+      if (style.overflowY === "auto" || style.overflowY === "scroll") break;
+      scrollParent = scrollParent.parentElement;
+    }
+    const prevScrollTop = scrollParent ? scrollParent.scrollTop : 0;
+    if (scrollParent) scrollParent.scrollTop = 0;
+
+    // Pause card hover/entrance animations during capture — mid-transition
+    // opacity/transform states are what cause faint duplicate renders.
+    el.classList.add("exporting-freeze");
+
+    // Let layout settle (scroll reset + class change + web fonts) before
+    // handing off to html2canvas.
+    await document.fonts?.ready?.catch(() => {});
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+    let canvas;
+    try {
+      canvas = await html2canvas(el, {
+        backgroundColor: "#F6F5F9",
+        useCORS: true,
+        allowTaint: true,
+        scale: Math.max(2, window.devicePixelRatio || 1), // sharp, non-blurry output
+        scrollX: 0,
+        scrollY: 0,
+        logging: false,
+        // NOTE: intentionally NOT passing windowWidth/windowHeight here.
+        // Forcing those changes the cloned document's viewport width,
+        // which makes recharts' ResponsiveContainer recompute chart
+        // width mid-capture — that's what was clipping the last data
+        // point / trailing axis label (e.g. "July 2026") off the edge.
+        // html2canvas already captures el's full natural scrollHeight
+        // without needing this, so it's safe to omit.
+      });
+    } finally {
+      el.classList.remove("exporting-freeze");
+      if (scrollParent) scrollParent.scrollTop = prevScrollTop;
+    }
+    return canvas;
+  }, []);
+
   const handleExport = useCallback(async (format) => {
     closeAllDropdowns();
+    setIsExporting(true);
     try {
-      const html2canvas = (await import("html2canvas-pro")).default;
-      const el = dashboardRef.current;
-      if (!el) return;
-      const canvas = await html2canvas(el, { backgroundColor: "#F6F5F9", useCORS: true });
+      const canvas = await captureDashboard();
+      if (!canvas) return;
+
       if (format === "png") {
         const link = document.createElement("a");
         link.download = "dashboard.png";
@@ -95,41 +155,35 @@ export function DashboardCanvas({ library }) {
       } else if (format === "pdf") {
         const { jsPDF } = await import("jspdf");
         const imgData = canvas.toDataURL("image/png");
-        const pdf = new jsPDF("landscape", "mm", "a4");
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-        pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-        pdf.save("dashboard.pdf");
-      } else if (format === "xlsx") {
-        const XLSX = await import("xlsx");
-        const wb = XLSX.utils.book_new();
-        const tables = el.querySelectorAll(".openui-table-table");
-        tables.forEach((table, i) => {
-          const rows = [];
-          table.querySelectorAll("tr").forEach((tr) => {
-            const row = [];
-            tr.querySelectorAll("th, td").forEach((td) => row.push(td.textContent.trim()));
-            rows.push(row);
-          });
-          if (rows.length) {
-            const ws = XLSX.utils.aoa_to_sheet(rows);
-            XLSX.utils.book_append_sheet(wb, ws, `Table${i + 1}`);
-          }
+
+        // Build the PDF page to match the full captured content instead
+        // of forcing everything into one fixed A4 page — that's what was
+        // cutting the dashboard off halfway before.
+        const pxToMm = (px) => (px * 25.4) / 96;
+        const pageWidthMm = pxToMm(canvas.width / (Math.max(2, window.devicePixelRatio || 1)));
+        const pageHeightMm = pxToMm(canvas.height / (Math.max(2, window.devicePixelRatio || 1)));
+
+        const pdf = new jsPDF({
+          orientation: pageWidthMm >= pageHeightMm ? "landscape" : "portrait",
+          unit: "mm",
+          format: [pageWidthMm, pageHeightMm],
         });
-        XLSX.writeFile(wb, "dashboard.xlsx");
+        pdf.addImage(imgData, "PNG", 0, 0, pageWidthMm, pageHeightMm);
+        pdf.save("dashboard.pdf");
       }
     } catch (e) {
       console.error("Export failed:", e);
+    } finally {
+      setIsExporting(false);
     }
-  }, [closeAllDropdowns]);
+  }, [closeAllDropdowns, captureDashboard]);
 
   const handleSendMail = useCallback(async () => {
     if (!mailTo.trim()) return;
     setMailStatus("sending...");
+    setIsExporting(true);
     try {
-      const canvas = await (await import("html2canvas-pro")).default(
-        dashboardRef.current, { backgroundColor: "#F6F5F9", useCORS: true }
-      );
+      const canvas = await captureDashboard();
       const imgData = canvas.toDataURL("image/png");
       frappe.call({
         method: "frappe_assistant_core.api.admin_api.send_dashboard_mail",
@@ -150,13 +204,38 @@ export function DashboardCanvas({ library }) {
       });
     } catch (e) {
       setMailStatus("Error: " + e.message);
+    } finally {
+      setIsExporting(false);
     }
-  }, [mailTo, mailFormat]);
+  }, [mailTo, mailFormat, captureDashboard]);
 
   if (!dashboardCode && !isStreaming) return null;
 
   return (
     <>
+      {isExporting && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 1000,
+          background: "rgba(33,27,46,0.35)", backdropFilter: "blur(1px)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <div style={{
+            background: "white", borderRadius: 8, padding: "18px 28px",
+            display: "flex", alignItems: "center", gap: 12,
+            boxShadow: "0 12px 32px rgba(91,44,141,0.25)",
+            fontFamily: "Inter, sans-serif", fontSize: 13, fontWeight: 600, color: "#211B2E",
+          }}>
+            <span style={{
+              width: 16, height: 16, borderRadius: "50%",
+              border: "2px solid #DDD2EE", borderTopColor: "#5B2C8D",
+              animation: "openui-spin 0.7s linear infinite", display: "inline-block",
+            }} />
+            Preparing export…
+          </div>
+          <style>{`@keyframes openui-spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      )}
+
       {dashboardCode && !isStreaming && (
         <div style={{
           display: "flex", alignItems: "center", gap: 8, marginBottom: 12, fontSize: 12, flexWrap: "wrap",
@@ -173,12 +252,12 @@ export function DashboardCanvas({ library }) {
               color="#7C3AED"
               icon="↓"
               isOpen={showExportMenu}
+              disabled={isExporting}
               onClick={() => { closeAllDropdowns(); setShowExportMenu(!showExportMenu); }}
               dropdown={
                 <>
                   <DropdownItem onClick={() => handleExport("png")}>📸 PNG Image</DropdownItem>
                   <DropdownItem onClick={() => handleExport("pdf")}>📄 PDF Document</DropdownItem>
-                  <DropdownItem onClick={() => handleExport("xlsx")}>📊 Excel Spreadsheet</DropdownItem>
                 </>
               }
             />
@@ -188,6 +267,7 @@ export function DashboardCanvas({ library }) {
               color="#D99A3D"
               icon="✉"
               isOpen={showMailMenu}
+              disabled={isExporting}
               onClick={() => { closeAllDropdowns(); setShowMailMenu(!showMailMenu); }}
               dropdown={
                 <div style={{ padding: 8, width: 220 }}>
@@ -201,7 +281,7 @@ export function DashboardCanvas({ library }) {
                     }}
                   />
                   <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
-                    {["png", "pdf", "xlsx"].map((f) => (
+                    {["png", "pdf"].map((f) => (
                       <button
                         key={f}
                         onClick={() => setMailFormat(f)}
@@ -216,7 +296,7 @@ export function DashboardCanvas({ library }) {
                   </div>
                   <button
                     onClick={handleSendMail}
-                    disabled={!mailTo.trim()}
+                    disabled={!mailTo.trim() || isExporting}
                     style={{
                       width: "100%", padding: "6px 0", border: "none", borderRadius: 3,
                       background: mailTo.trim() ? "#D99A3D" : "#E5E7EB",
@@ -233,7 +313,7 @@ export function DashboardCanvas({ library }) {
 
             <ToolbarButton
               label="Schedule"
-              color="#8A8478"
+              color="#6d6357"
               icon="⏱"
               isOpen={showScheduleMenu}
               onClick={() => { closeAllDropdowns(); setShowScheduleMenu(!showScheduleMenu); }}
@@ -253,7 +333,7 @@ export function DashboardCanvas({ library }) {
                   <div style={{ marginBottom: 8 }}>
                     <label style={{ fontSize: 11, color: "#8B5CF6", display: "block", marginBottom: 2 }}>Format</label>
                     <div style={{ display: "flex", gap: 4 }}>
-                      {["png", "pdf", "xlsx"].map((f) => (
+                      {["png", "pdf"].map((f) => (
                         <button key={f} style={{ flex: 1, padding: "4px 6px", border: "1px solid #E5E7EB", borderRadius: 3, background: "white", cursor: "pointer", fontSize: 10, fontWeight: 600, fontFamily: "Inter, sans-serif", textTransform: "uppercase" }}>{f}</button>
                       ))}
                     </div>
@@ -268,8 +348,8 @@ export function DashboardCanvas({ library }) {
             <div style={{ width: 1, height: 20, background: "#E5E7EB", margin: "0 4px" }} />
 
             <button onClick={() => closeAllDropdowns() || setShowSource(!showSource)} style={{
-              background: "none", border: "1px solid #E5E7EB", borderRadius: 4, cursor: "pointer",
-              color: "#8B5CF6", fontSize: 11, padding: "5px 10px", fontWeight: 600, fontFamily: "Inter, sans-serif",
+              background: "none", border: "1px solid #9ca3af", borderRadius: 4, cursor: "pointer",
+              color: "#6d3fa6", fontSize: 11, padding: "5px 10px", fontWeight: 600, fontFamily: "Inter, sans-serif",
               transition: "all 0.12s",
             }}
 onMouseEnter={(e) => { e.currentTarget.style.background = "#F6F5F9"; }}

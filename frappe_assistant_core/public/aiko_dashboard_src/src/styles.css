@@ -1,16 +1,23 @@
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
 :root {
-  --ink: #1F2621;
-  --paper: #F7F5EE;
-  --paper-dim: #EFEBE0;
-  --green: #2F5233;
-  --green-soft: #4C6E51;
-  --sage: #A9BFA8;
+  /* ── Brand core (Kofleetz purple) ── */
+  --ink: #211B2E;
+  --paper: #F6F3FB;
+  --paper-dim: #ECE6F7;
+  --purple: #5B2C8D;
+  --purple-soft: #7C4DB8;
+  --purple-tint: #A480D1;
+  --lilac: #C9AEE8;
   --amber: #D99A3D;
   --rust: #B54A3F;
-  --line: #D8D2C2;
+  --line: #DDD2EE;
   --white: #FFFFFF;
+
+  /* legacy aliases kept so nothing else in this file needs renaming */
+  --green: var(--purple);
+  --green-soft: var(--purple-soft);
+  --sage: var(--lilac);
 
   --openui-background: var(--paper);
   --openui-foreground: var(--white);
@@ -19,15 +26,15 @@
   --openui-sunk-light: var(--paper);
   --openui-border-default: var(--line);
   --openui-border-interactive: var(--line);
-  --openui-border-interactive-emphasis: var(--green-soft);
+  --openui-border-interactive-emphasis: var(--purple-soft);
   --openui-text-neutral-primary: var(--ink);
-  --openui-text-neutral-secondary: var(--green-soft);
-  --openui-radius-s: 4px;
-  --openui-radius-m: 4px;
-  --openui-radius-l: 4px;
-  --openui-radius-xl: 4px;
-  --openui-radius-2xl: 4px;
-  --openui-radius-3xl: 4px;
+  --openui-text-neutral-secondary: var(--purple-soft);
+  --openui-radius-s: 6px;
+  --openui-radius-m: 8px;
+  --openui-radius-l: 10px;
+  --openui-radius-xl: 10px;
+  --openui-radius-2xl: 10px;
+  --openui-radius-3xl: 10px;
 
   --openui-font-body: "Inter", sans-serif;
   --openui-font-heading: "Fraunces", serif;
@@ -70,6 +77,23 @@
   --openui-text-numbers-heading-md: 600 24px/1.1 var(--openui-font-numbers);
   --openui-text-numbers-heading-lg: 600 28px/1.1 var(--openui-font-numbers);
   --openui-text-numbers-heading-xl: 600 32px/1.1 var(--openui-font-numbers);
+
+  /* variant tokens used by @openuidev/react-ui Callout & Tag components */
+  --openui-success-background: rgba(91, 44, 141, 0.10);
+  --openui-text-success-primary: var(--purple);
+  --openui-border-success-emphasis: var(--purple);
+
+  --openui-info-background: rgba(76, 110, 245, 0.10);
+  --openui-text-info-primary: #4C6EF5;
+  --openui-border-info-emphasis: #4C6EF5;
+
+  --openui-alert-background: rgba(217, 154, 61, 0.14);
+  --openui-text-alert-primary: var(--amber);
+  --openui-border-alert-emphasis: var(--amber);
+
+  --openui-danger-background: rgba(181, 74, 63, 0.10);
+  --openui-text-danger-primary: var(--rust);
+  --openui-border-danger-emphasis: var(--rust);
 }
 
 * {
@@ -111,34 +135,53 @@ body {
 .openui-card-card {
   background: var(--white) !important;
   border: 1px solid var(--line) !important;
-  border-radius: 4px !important;
+  border-radius: 10px !important;
   padding: 24px !important;
-  box-shadow: 0 2px 8px rgba(31, 38, 33, 0.03) !important;
-  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
+  box-shadow: 0 1px 2px rgba(91,44,141,0.04), 0 8px 24px rgba(91,44,141,0.05) !important;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease, border-color 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.openui-card-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--purple), var(--purple-soft) 60%, var(--lilac));
+  opacity: 0;
+  transition: opacity 0.25s ease;
 }
 
 .openui-card-card:hover {
   transform: translateY(-3px);
-  box-shadow: 0 12px 32px rgba(31,38,33,0.10);
+  box-shadow: 0 16px 36px rgba(91,44,141,0.14);
+  border-color: var(--purple-tint) !important;
+}
+
+.openui-card-card:hover::before {
+  opacity: 1;
 }
 
 .openui-card-sunk {
   background: var(--paper-dim) !important;
   border: 1px solid var(--line) !important;
-  border-radius: 4px !important;
+  border-radius: 10px !important;
   padding: 24px !important;
   box-shadow: none !important;
 }
 
 /* ── Masthead styling ── */
 .openui-card-sunk:has(.openui-header):not(:has(.openui-text-callout)) {
-  background: #EEF2EA !important;
+  background: linear-gradient(135deg, #F1EAFB 0%, #EFE7FA 100%) !important;
   color: var(--ink) !important;
   border: 1px solid var(--line) !important;
-  border-left: 4px solid var(--green) !important;
-  padding: 28px 32px !important;
-  border-radius: 4px !important;
+  border-left: 5px solid var(--purple) !important;
+  padding: 30px 34px !important;
+  border-radius: 10px !important;
   margin-bottom: 24px !important;
+  box-shadow: 0 6px 20px rgba(91,44,141,0.08) !important;
+  position: relative;
 }
 
 .openui-card-sunk:has(.openui-header):not(:has(.openui-text-callout)) .openui-header {
@@ -149,22 +192,25 @@ body {
 
 .openui-card-sunk:has(.openui-header):not(:has(.openui-text-callout)) .openui-header-top-left {
   color: var(--ink) !important;
-  font-size: 1.75rem !important;
+  font-size: 1.85rem !important;
   font-weight: 700 !important;
   font-family: var(--openui-font-heading) !important;
+  letter-spacing: -0.01em;
 }
 
 .openui-card-sunk:has(.openui-header):not(:has(.openui-text-callout)) .openui-header-bottom {
-  color: var(--green-soft) !important;
+  color: var(--purple-soft) !important;
   font-size: 0.95rem !important;
   margin-top: 6px !important;
+  font-weight: 500;
 }
 
 /* ── Section headers (h2 style) ── */
 .openui-header {
-  border-bottom: 2px solid var(--green) !important;
+  border-bottom: 2px solid var(--purple) !important;
   padding-bottom: 8px !important;
   margin-bottom: 16px !important;
+  position: relative;
 }
 
 .openui-header-top-left {
@@ -177,30 +223,31 @@ body {
 .openui-header-bottom {
   font-family: var(--openui-font-body) !important;
   font-size: 0.85rem !important;
-  color: var(--green-soft) !important;
+  color: var(--purple-soft) !important;
   margin-top: 4px !important;
 }
 
 /* ── Table overrides ── */
 .openui-table-container {
   border: 1px solid var(--line) !important;
-  border-radius: 4px !important;
-  box-shadow: none !important;
+  border-radius: 10px !important;
+  box-shadow: 0 1px 2px rgba(91,44,141,0.03) !important;
   background-color: var(--white) !important;
+  overflow: hidden;
 }
 
 .openui-table-head {
-  background-color: var(--paper-dim) !important;
+  background: linear-gradient(180deg, #F3EEFB, #ECE5F8) !important;
   border-bottom: 2px solid var(--line) !important;
 }
 
 .openui-table-head .openui-table-head-label {
   font-family: var(--openui-font-label) !important;
-  color: var(--green-soft) !important;
-  font-weight: 600 !important;
+  color: var(--purple-soft) !important;
+  font-weight: 700 !important;
   font-size: 11px !important;
   text-transform: uppercase !important;
-  letter-spacing: 0.05em !important;
+  letter-spacing: 0.06em !important;
 }
 
 .openui-table-row {
@@ -209,7 +256,7 @@ body {
 }
 
 .openui-table-row:nth-child(even) {
-  background-color: #FAF9F6 !important;
+  background-color: #FAF8FD !important;
 }
 
 .openui-table-row:hover {
@@ -220,7 +267,7 @@ body {
   font-family: var(--openui-font-body) !important;
   font-size: 13px !important;
   color: var(--ink) !important;
-  padding: 10px 12px !important;
+  padding: 11px 14px !important;
 }
 
 .openui-table-cell:has([style*="font-variant-numeric: tabular-nums"]),
@@ -237,7 +284,7 @@ body {
   padding: 24px 12px;
   margin-top: 8px;
   margin-bottom: 28px;
-  box-shadow: 0 4px 20px rgba(31, 38, 33, 0.05);
+  box-shadow: 0 4px 20px rgba(91, 44, 141, 0.06);
 }
 
 .sap-receipt-strip::before,
@@ -275,65 +322,61 @@ body {
   justify-content: center;
   align-items: flex-start;
   padding: 16px 20px !important;
-  border-radius: 4px !important;
+  border-radius: 8px !important;
   border: 1px solid var(--line) !important;
-  box-shadow: 0 1px 3px rgba(31, 38, 33, 0.02) !important;
+  box-shadow: 0 1px 3px rgba(91,44,141,0.03) !important;
   transition: transform 0.2s ease, box-shadow 0.2s ease !important;
 }
 
 .sap-receipt-line:hover {
   transform: translateY(-2px) !important;
-  box-shadow: 0 4px 12px rgba(31, 38, 33, 0.06) !important;
+  box-shadow: 0 6px 16px rgba(91,44,141,0.10) !important;
 }
 
+/* KPI accent rotation — purple family with warm/cool support colors for contrast */
 .sap-receipt-line:nth-child(1) {
-  background-color: #f0f7f4 !important;
-  border-left: 4px solid #2f5233 !important;
+  background-color: #F3EEFB !important;
+  border-left: 4px solid #5B2C8D !important;
 }
-
 .sap-receipt-line:nth-child(1) .openui-card-card > div:nth-child(1),
 .sap-receipt-line:nth-child(1) .openui-card-card > div:nth-child(1) * {
-  color: #2f5233 !important;
+  color: #5B2C8D !important;
 }
 
 .sap-receipt-line:nth-child(2) {
-  background-color: #fbf6ec !important;
-  border-left: 4px solid #d99a3d !important;
+  background-color: #EFEAFA !important;
+  border-left: 4px solid #7C4DB8 !important;
 }
-
 .sap-receipt-line:nth-child(2) .openui-card-card > div:nth-child(1),
 .sap-receipt-line:nth-child(2) .openui-card-card > div:nth-child(1) * {
-  color: #b3741b !important;
+  color: #6D3FA6 !important;
 }
 
 .sap-receipt-line:nth-child(3) {
-  background-color: #f4f7f6 !important;
-  border-left: 4px solid #4c6e51 !important;
+  background-color: #FBF6EC !important;
+  border-left: 4px solid #D99A3D !important;
 }
-
 .sap-receipt-line:nth-child(3) .openui-card-card > div:nth-child(1),
 .sap-receipt-line:nth-child(3) .openui-card-card > div:nth-child(1) * {
-  color: #4c6e51 !important;
+  color: #B3741B !important;
 }
 
 .sap-receipt-line:nth-child(4) {
-  background-color: #f6f5f8 !important;
-  border-left: 4px solid #8a8478 !important;
+  background-color: #EEF1FB !important;
+  border-left: 4px solid #4C6EF5 !important;
 }
-
 .sap-receipt-line:nth-child(4) .openui-card-card > div:nth-child(1),
 .sap-receipt-line:nth-child(4) .openui-card-card > div:nth-child(1) * {
-  color: #6b6559 !important;
+  color: #3A56D4 !important;
 }
 
 .sap-receipt-line:nth-child(5) {
-  background-color: #f9f4f4 !important;
-  border-left: 4px solid #b54a3f !important;
+  background-color: #F9F4F4 !important;
+  border-left: 4px solid #B54A3F !important;
 }
-
 .sap-receipt-line:nth-child(5) .openui-card-card > div:nth-child(1),
 .sap-receipt-line:nth-child(5) .openui-card-card > div:nth-child(1) * {
-  color: #b54a3f !important;
+  color: #B54A3F !important;
 }
 
 .sap-receipt-line .openui-card-card {
@@ -348,15 +391,15 @@ body {
 .sap-receipt-line .openui-card-card > div:nth-child(1) * {
   font-family: var(--openui-font-label) !important;
   font-size: 11px !important;
-  font-weight: 550 !important;
-  letter-spacing: 0.05em !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.06em !important;
   text-transform: uppercase !important;
 }
 
 .sap-receipt-line .openui-card-card > div:nth-child(2),
 .sap-receipt-line .openui-card-card > div:nth-child(2) * {
   font-family: var(--openui-font-numbers) !important;
-  font-size: 26px !important;
+  font-size: 27px !important;
   font-weight: 600 !important;
   color: var(--ink) !important;
   margin: 4px 0 !important;
@@ -372,15 +415,15 @@ body {
 /* ── Callout overrides ── */
 .openui-text-callout {
   background: var(--white) !important;
-  border-radius: 3px !important;
+  border-radius: 8px !important;
   padding: 14px 18px !important;
   border: 1px solid var(--line) !important;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.02) !important;
+  box-shadow: 0 1px 3px rgba(91,44,141,0.03) !important;
 }
 
-.openui-text-callout-success { border-left: 4px solid var(--green) !important; }
+.openui-text-callout-success { border-left: 4px solid var(--purple) !important; }
 .openui-text-callout-warning { border-left: 4px solid var(--amber) !important; }
-.openui-text-callout-info { border-left: 4px solid var(--green-soft) !important; }
+.openui-text-callout-info { border-left: 4px solid var(--purple-soft) !important; }
 .openui-text-callout-neutral { border-left: 4px solid var(--ink) !important; }
 
 .openui-text-callout-content-title {
@@ -391,7 +434,7 @@ body {
 }
 
 .openui-text-callout-content-description {
-  color: #5c6159 !important;
+  color: #5c5665 !important;
   font-size: 0.85rem !important;
 }
 
@@ -400,35 +443,37 @@ body {
   font-family: var(--openui-font-label);
   font-size: 12px;
   font-weight: 600;
-  border-radius: 4px;
+  border-radius: 6px;
   padding: 8px 16px;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .openui-button-primary {
-  background: var(--green);
+  background: linear-gradient(135deg, var(--purple), var(--purple-soft));
   color: var(--white);
   border: none;
+  box-shadow: 0 2px 8px rgba(91,44,141,0.25);
 }
 
 .openui-button-primary:hover {
-  background: var(--green-soft);
+  background: var(--purple-soft);
+  box-shadow: 0 4px 14px rgba(91,44,141,0.35);
 }
 
 /* ── Chart palette ── */
 [data-chart-palette] {
-  --chart-1: #2F5233;
-  --chart-2: #4C6E51;
-  --chart-3: #A9BFA8;
+  --chart-1: #5B2C8D;
+  --chart-2: #7C4DB8;
+  --chart-3: #A480D1;
   --chart-4: #D99A3D;
-  --chart-5: #B54A3F;
-  --chart-6: #8A8478;
-  --chart-7: #6C757D;
+  --chart-5: #4C6EF5;
+  --chart-6: #B54A3F;
+  --chart-7: #8A8478;
 }
 
 .dashboard-input::placeholder {
-  color: #4B5563;
+  color: #6B6178;
   opacity: 0.8;
 }
 
@@ -439,6 +484,7 @@ body {
   filter: brightness(1.1);
   transition: filter 0.15s ease;
 }
+
 /* Markdown content inside conversation bubbles */
 .openui-markdown-renderer, .openui-markdown-renderer * {
   font-family: "Inter", sans-serif;
@@ -470,4 +516,98 @@ body {
 .openui-markdown-renderer blockquote {
   border-left: 3px solid #A78BFA; margin: 6px 0; padding: 2px 12px;
   color: #5B5650; font-style: italic;
+}
+/* ══════════════════════════════════════════════
+   ADD-ON REFINEMENTS — append to the end of styles.css
+   ══════════════════════════════════════════════ */
+
+/* 1. KPI cards — depth, hierarchy, color anchor */
+.sap-receipt-line {
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08) !important;
+  padding: 16px 20px 14px !important; /* tighter bottom */
+}
+
+.sap-receipt-line .openui-card-card > div:nth-child(2),
+.sap-receipt-line .openui-card-card > div:nth-child(2) * {
+  font-size: 2.2rem !important;
+  font-weight: 700 !important;
+  line-height: 1.1 !important;
+}
+
+.sap-receipt-line .openui-card-card > div:nth-child(1),
+.sap-receipt-line .openui-card-card > div:nth-child(1) * ,
+.sap-receipt-line .openui-card-card > div:nth-child(3),
+.sap-receipt-line .openui-card-card > div:nth-child(3) * {
+  color: #6b7280 !important; /* dim label + caption so the number pops */
+}
+/* re-apply accent color only to the first (label) line, kept subtle not loud */
+.sap-receipt-line .openui-card-card > div:nth-child(1),
+.sap-receipt-line .openui-card-card > div:nth-child(1) * {
+  color: #8a8496 !important;
+}
+
+/* 2. Chart gridlines — lighten so they don't compete with the line */
+.recharts-cartesian-grid line {
+  stroke: #f0f0f0 !important;
+}
+
+/* 3. Header banner — tighter, softer */
+.openui-card-sunk:has(.openui-header):not(:has(.openui-text-callout)) {
+  background: linear-gradient(135deg, #f5f3ff, #ede9fe) !important;
+  padding: 22px 30px !important; /* was 30px 34px — less vertical real estate */
+}
+
+/* 4. Section header underline — either make it a full divider or remove.
+   Below: extends it full width as a proper divider instead of a stray clipped line. */
+.openui-header {
+  border-bottom: 1px solid #e5e7eb !important;
+  width: 100%;
+}
+.openui-header-bottom {
+  border-bottom: none !important; /* kill the old stray underline on the subtitle itself */
+  padding-bottom: 0 !important;
+}
+
+/* 5. Consistent spacing rhythm */
+.openui-card-card,
+.openui-card-sunk {
+  border-radius: 8px !important; /* unify with buttons below */
+}
+.sap-receipt-grid,
+.openui-stack-row,
+.openui-stack-column {
+  gap: 20px !important; /* one consistent value everywhere */
+}
+
+/* 7. Export fix: freeze animations/hover-transforms while html2canvas
+   captures the dashboard — mid-transition opacity/transform states are
+   what produced the ghosted/duplicated look in exported PNG/PDF. */
+/* Safe to disable everywhere: kills entrance animations + hover
+   transitions without touching layout. */
+.exporting-freeze,
+.exporting-freeze * {
+  animation: none !important;
+  transition: none !important;
+}
+
+/* Only reset `transform` on the specific decorative elements that use it
+   for hover-lift/entrance effects. Do NOT do this on every descendant —
+   chart libraries (recharts) use inline `transform` on internal SVG
+   groups (axis ticks, bar/line positioning) for actual layout, and a
+   blanket reset silently breaks that: it's what was making Y-axis
+   vehicle-plate labels disappear and bar widths render wrong in exports. */
+.exporting-freeze.openui-card-card,
+.exporting-freeze .openui-card-card,
+.exporting-freeze .sap-receipt-line {
+  transform: none !important;
+}
+
+/* 8. Hide interactive-only controls (legend scroll arrows, "Show more",
+   any button) during export capture — they can't function in a flattened
+   PNG/PDF and just look like dead UI, so we remove them from the snapshot
+   only; the live dashboard is untouched since this class is added/removed
+   right around the html2canvas capture window. */
+.exporting-freeze button,
+.exporting-freeze .openui-stacked-legend-show-more-button {
+  display: none !important;
 }

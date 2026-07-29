@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 const DashboardContext = createContext(null);
 
@@ -66,6 +66,89 @@ export function DashboardProvider({ children }) {
   const [mailFormat, setMailFormat] = useState("png");
   const [mailStatus, setMailStatus] = useState("");
   const [pendingThreads, setPendingThreads] = useState({});
+
+  // --- Strategy-A state: live Query cache + Renderer re-mount control.
+  const queryMapRef = useRef({});          // canonical frontend key → live data
+  const queriesMetaRef = useRef([]);       // [{key, tool, args, statementId}]
+  const lastRefreshAtRef = useRef(null);
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [lastRefreshAt, setLastRefreshAt] = useState(null);
+
+  // Canonical, cross-platform stable key for (tool_name + args).  Backend
+  // uses hashlib.sha1, frontend uses base64(JSON with sorted keys) — these
+  // can never match directly, so we always translate via (tool,args) metadata.
+  const makeCanonicalKey = useCallback((tool_name, args) => {
+    const tn = String(tool_name || "");
+    const a = (args && typeof args === "object") ? args : {};
+    try {
+      const stable = JSON.stringify(a, Object.keys(a).sort());
+      return `${tn}::${btoa(unescape(encodeURIComponent(stable)))}`;
+    } catch {
+      // Fallback: naive stringification (acceptable as a cache key for the
+      // life of this page load; collisions = re-fetch once, not data loss).
+      return `${tn}::${JSON.stringify(a)}`;
+    }
+  }, []);
+
+  // Tools whose result should be treated as a LIST OF ROWS for @Each/@Filter.
+  // Their return shape is {success: true, data: [rows], count, total_count}.
+  const ROW_LIST_TOOLS = new Set([
+    "list_documents", "run_database_query", "search_documents",
+    "search_doctype", "get_pending_approvals",
+  ]);
+
+  const THROW_AWAY_KEYS_ON_RESULT = new Set([
+    // Strip success-flag boilerplate before we put anything into the cache
+    // for the Renderer to read.  This prevents e.g. Count({..}) returning 3
+    // for the number of keys in a status dict, when the user expected the
+    // actual row count inside .data list.
+    "success", "error", "error_type", "error_code", "execution_time",
+    "audit_logged", "traceback", "message",
+  ]);
+
+  const normaliseToolResultForFrontend = useCallback((toolName, rawPayload) => {
+    // rawPayload = whatever the backend execute_tool returned: the tool's
+    // actual return dict (e.g. {success, label, value, groups, count, data}).
+    if (rawPayload == null) return rawPayload;
+    let out = rawPayload;
+    // ---- For row-list tools: promote the data list to be the primary value
+    if (ROW_LIST_TOOLS.has(toolName) && typeof out === "object") {
+      const data = out.data;
+      if (Array.isArray(data)) {
+        // Decorate the rows array with sibling properties (label/value/count
+        // etc.) so expressions like Query("run_database_query", ...).label
+        // still resolve even though the "resolved Query" is a list.
+        const extras = {};
+        for (const [k, v] of Object.entries(out)) {
+          if (THROW_AWAY_KEYS_ON_RESULT.has(k)) continue;
+          extras[k] = v;
+        }
+        // Attach props directly onto the Array.  React / the Renderer do not
+        // mutate this; they just read fields.
+        const decorated = Array.from(data);
+        Object.assign(decorated, extras);
+        out = decorated;
+      }
+    } else if (typeof out === "object" && !Array.isArray(out)) {
+      // Non-row tool (aggregate_documents / create_dashboard_chart / ...).
+      // Expose it as a plain object with label/value/labels/values etc.,
+      // but strip noisy boilerplate keys.
+      const cleaned = {};
+      for (const [k, v] of Object.entries(out)) {
+        if (THROW_AWAY_KEYS_ON_RESULT.has(k)) continue;
+        cleaned[k] = v;
+      }
+      // .label ← .labels alias, .value ← .values alias (and vice versa)
+      // to accommodate both accessor shapes the LLM emits.
+      if ("label" in cleaned && !("labels" in cleaned)) cleaned.labels = cleaned.label;
+      if ("labels" in cleaned && !("label" in cleaned)) cleaned.label = cleaned.labels;
+      if ("value" in cleaned && !("values" in cleaned)) cleaned.values = cleaned.value;
+      if ("values" in cleaned && !("value" in cleaned)) cleaned.value = cleaned.values;
+      out = cleaned;
+    }
+    return out;
+  }, []);
+
   const threadId = useRef(currentThreadId);
   const abortRef = useRef(null);
   const lastPromptRef = useRef(null);
@@ -234,10 +317,203 @@ export function DashboardProvider({ children }) {
     [pendingThreads],
   );
 
+  // --- Strategy-A Query resolver. Called by Renderer via any of 4 possible prop
+  // names (see DashboardCanvas). Also handles @Run(statementId) for targeted
+  // Query refresh on button click.
+  const queryResolver = useCallback((call) => {
+    // @Run(queryRef) targeted refresh from DSL button clicks or @Run-based
+    // re-execution.  `call` shape depends on how the Renderer encodes Run
+    // events — Step 0 diagnostics will tell us exact payload.
+    if (call?._kind === "run" || call?.kind === "run") {
+      const sid = call.statementId ?? call?.statement_id;
+      if (sid) {
+        const meta = queriesMetaRef.current.find(
+          (q) => (q.statement_id === sid || q.statementId === sid)
+        );
+        if (meta && meta.tool) {
+          const canonicalKey = makeCanonicalKey(meta.tool, meta.args || {});
+          frappe.call({
+            method: "frappe_assistant_core.api.assistant_api.execute_tool",
+            args: { tool_name: meta.tool, arguments: meta.args || {} },
+            callback: (r) => {
+              const raw = r.message?.result !== undefined
+                ? r.message.result
+                : r.message;
+              queryMapRef.current[canonicalKey] = normaliseToolResultForFrontend(meta.tool, raw);
+              queriesMetaRef.current = queriesMetaRef.current.map((q) =>
+                (q.key === meta.key || q.statement_id === sid || q.statementId === sid)
+                  ? { ...q, key: canonicalKey }
+                  : q
+              );
+              setRefreshTick((n) => n + 1);
+            },
+          });
+        }
+      }
+      return undefined;
+    }
+
+    // --- Normal Query(tool, args) resolve on Renderer evaluation.
+    let tool_name = call?.tool ?? call?.toolName ?? call?.name ?? call?.callee ?? null;
+    let args      = call?.args ?? call?.arguments ?? call?.params ?? call?.input ?? call?.options ?? {};
+    if (typeof call === "string") tool_name = call;
+    if (!tool_name) {
+      // eslint-disable-next-line no-console
+      console.warn("[queryResolver] can't determine tool_name from call", call);
+      return undefined;
+    }
+    const key = makeCanonicalKey(tool_name, args);
+    const cache = queryMapRef.current || {};
+    if (Object.prototype.hasOwnProperty.call(cache, key) && cache[key] !== undefined) {
+      return cache[key];
+    }
+    // Cache miss → fire async re-fetch, populate cache, force remount. Renderer
+    // will see undefined this frame, then we bump refreshTick → Renderer
+    // re-mounts and hits the cache on 2nd render.
+    frappe.call({
+      method: "frappe_assistant_core.api.assistant_api.execute_tool",
+      args: { tool_name, arguments: args || {} },
+      callback: (r) => {
+        const raw = r.message?.result !== undefined
+          ? r.message.result
+          : r.message;
+        queryMapRef.current[key] = normaliseToolResultForFrontend(tool_name, raw);
+        // Also remember metadata entry (for @Run by statementId later)
+        if (!queriesMetaRef.current.some((m) => m.tool === tool_name && JSON.stringify(m.args || {}) === JSON.stringify(args || {}))) {
+          queriesMetaRef.current.push({ key, tool: tool_name, args: args || {}, statement_id: null });
+        }
+        setRefreshTick((n) => n + 1);
+      },
+      error: () => {
+        // Store sentinel null so we don't retry this exact query every render
+        // tick.  User can click Refresh to flush sentinels.
+        queryMapRef.current[key] = null;
+      },
+    });
+    return undefined;
+  }, [makeCanonicalKey, normaliseToolResultForFrontend]);
+
+
   const refresh = useCallback(() => {
-    if (!lastPromptRef.current || isStreaming) return;
-    send(lastPromptRef.current);
-  }, [send, isStreaming]);
+    if (isStreaming) return;
+    setStage("Refreshing data…");
+
+    // --- Phase 1: Strategy-A — run UNIQUE queries, get {queryMap, queries} back.
+    frappe.call({
+      method: "frappe_assistant_core.aiko.api.refresh_dashboard_queries",
+      args: { thread_id: threadId.current, legacy_fallback: false },
+      callback: (r) => {
+        const msg = r.message;
+        if (msg?.success) {
+          // -------- BACKEND → FRONTEND KEY MAPPING STEP --------
+          // Backend produces msg.queryMap = { <sha1>: <result> } AND
+          // msg.queries = [{tool, args, key: <sha1>, ...}].
+          // We re-index cache entries by our CANONICAL frontend key so the
+          // resolver finds them regardless of hash algorithm mismatch.
+          if (Array.isArray(msg.queries) && msg.queryMap && typeof msg.queryMap === "object") {
+            for (const q of msg.queries) {
+              const canonicalKey = makeCanonicalKey(q.tool, q.args || {});
+              const backendVal = (msg.queryMap || {})[q.key];
+              if (backendVal === undefined) continue;
+              const normalised = normaliseToolResultForFrontend(q.tool, backendVal);
+              queryMapRef.current[canonicalKey] = normalised;
+              // Also enrich metadata.
+              q._canonical_key = canonicalKey;
+            }
+          } else if (msg.queryMap && typeof msg.queryMap === "object") {
+            // Old backend (no queries metadata): put values as-is under the
+            // same keys they came in with; resolver will cache-miss on next
+            // query and re-fetch with the canonical key as a fallback.
+            queryMapRef.current = { ...queryMapRef.current, ...msg.queryMap };
+          }
+          if (Array.isArray(msg.queries)) {
+            queriesMetaRef.current = msg.queries;
+          }
+          if (msg.refreshed_at) {
+            lastRefreshAtRef.current = msg.refreshed_at;
+            setLastRefreshAt(msg.refreshed_at);
+          }
+          // Force Renderer re-mount so it resolves Queries against fresh cache.
+          setRefreshTick((n) => n + 1);
+          setStage("");
+        } else {
+          setStage("");
+          setConversation((prev) => [...prev, {
+            role: "assistant",
+            content: msg?.error || "Could not refresh live queries.",
+            text: msg?.error || "Could not refresh live queries.",
+            hasCode: false,
+          }]);
+        }
+
+        // --- Phase 2: Strategy-B (legacy) literal replacement for dashboards
+        // that DON'T have Query bindings. This handles Fuel Entry / Asset
+        // Movements style panels where numbers are baked literals. Runs in
+        // parallel and silently no-ops if there's nothing to refresh.
+        try {
+          frappe.call({
+            method: "frappe_assistant_core.aiko.api.refresh_dashboard",
+            args: { thread_id: threadId.current },
+            callback: (r2) => {
+              if (r2.message?.success && r2.message?.ui) {
+                // If legacy produced a refreshed UI string, set it as
+                // dashboardCode. Strategy-A Query values still win during
+                // render via the resolveQuery cache for Query-bound KPIs —
+                // the two pipelines update different, non-overlapping subsets
+                // of displayed values.
+                setDashboardCode(normalizeDsl(r2.message.ui));
+              }
+            },
+            error: () => {},
+          });
+        } catch { /* ignore legacy errors */ }
+      },
+      error: () => {
+        setStage("");
+        // On total network/endpoint failure, still try the legacy path once
+        // (it's a different code path and might still work).
+        try {
+          frappe.call({
+            method: "frappe_assistant_core.aiko.api.refresh_dashboard",
+            args: { thread_id: threadId.current },
+            callback: (r) => {
+              if (r.message?.success && r.message?.ui) {
+                setDashboardCode(normalizeDsl(r.message.ui));
+              }
+            },
+            error: () => {},
+          });
+        } catch {}
+      },
+    });
+  }, [isStreaming]);
+
+  // --- Tool provider for @openuidev/react-lang Renderer.
+  // The Renderer natively understands Query(tool, args, []) and calls
+  // toolProvider[toolName](args) to resolve each one.  This Proxy maps
+  // any tool name to an async function that fetches via execute_tool
+  // and normalises the result shape for frontend components.
+  const toolProvider = useMemo(() => new Proxy({}, {
+    get: (_, toolName) => {
+      if (typeof toolName !== "string") return undefined;
+      return async (args) => {
+        try {
+          const response = await frappe.call({
+            method: "frappe_assistant_core.api.assistant_api.execute_tool",
+            args: { tool_name: toolName, arguments: args || {} },
+          });
+          const raw = response.message?.result !== undefined
+            ? response.message.result
+            : response.message;
+          return normaliseToolResultForFrontend(toolName, raw);
+        } catch (err) {
+          console.error(`[toolProvider] ${toolName} failed`, err);
+          return null;
+        }
+      };
+    },
+  }), [normaliseToolResultForFrontend]);
+
   const loadSession = useCallback((newThreadId) => {
     threadId.current = newThreadId;
     localStorage.setItem("aiko_dashboard_thread_id", newThreadId);
@@ -307,7 +583,7 @@ export function DashboardProvider({ children }) {
         send,
         clear,
         refresh,
-        canRefresh: !!lastPromptRef.current && !isStreaming,
+        canRefresh: dashboardCode !== null && !isStreaming,
         currentThreadId,
         loadSession,
         startNewSession,
@@ -319,6 +595,10 @@ export function DashboardProvider({ children }) {
         mailTo, setMailTo,
         mailFormat, setMailFormat,
         mailStatus, setMailStatus,
+        queryResolver,
+        refreshTick,
+        lastRefreshAt,
+        toolProvider,
       }}
     >
       {children}
