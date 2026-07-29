@@ -72,6 +72,7 @@ class AikoAgent:
         )
         for msg in past_messages:
             self.messages.append({"role": msg["role"], "content": msg["content"]})
+
     def _trim_history(self):
         if len(self.messages) > MAX_HISTORY_MESSAGES:
             system_prompt = self.messages[0]
@@ -82,6 +83,11 @@ class AikoAgent:
         user = frappe.session.user
         user_doc = frappe.get_doc("User", user)
         api_key = user_doc.api_key
+        if not api_key:
+            raise RuntimeError(
+                f"User '{user}' does not have an API Key set. "
+                "Please generate one in your Frappe user settings to enable the AI assistant."
+            )
         api_secret = user_doc.get_password("api_secret")
 
         mcp_url = get_url("/api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp")
@@ -124,7 +130,7 @@ class AikoAgent:
                 query, self.session, self.messages,
                 on_stage=on_stage, is_cancelled=is_cancelled, want_ui=want_ui,
             )
-            final_answer, updated_messages, usage, ui = result
+            final_answer, updated_messages, usage, ui, tool_call_log, manifest = result
             if not final_answer:
                 final_answer = "I'm sorry, I couldn't generate a response. Please try again."
             self.messages = updated_messages
@@ -134,6 +140,8 @@ class AikoAgent:
                 "input_tokens": usage.get("input_tokens", 0),
                 "output_tokens": usage.get("output_tokens", 0),
                 "ui": ui,
+                "tool_calls": tool_call_log,
+                "manifest": manifest,
             }
         finally:
             await self.cleanup()

@@ -50,6 +50,7 @@ class CorePlugin(BasePlugin):
             "get_document",
             "update_document",
             "list_documents",
+            "aggregate_documents",
             "delete_document",
             "submit_document",
             # Search tools
@@ -91,6 +92,7 @@ class CorePlugin(BasePlugin):
                 "update": True,
                 "delete": True,
                 "list": True,
+                "aggregate": True,
             },
             "search": {"global_search": True, "doctype_search": True, "link_search": True},
             "metadata": {

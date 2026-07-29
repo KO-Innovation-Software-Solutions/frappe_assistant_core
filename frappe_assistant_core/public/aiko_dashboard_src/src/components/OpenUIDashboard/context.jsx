@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 const DashboardContext = createContext(null);
 
@@ -66,6 +66,61 @@ export function DashboardProvider({ children }) {
   const [mailFormat, setMailFormat] = useState("png");
   const [mailStatus, setMailStatus] = useState("");
   const [pendingThreads, setPendingThreads] = useState({});
+
+  const queryMapRef = useRef({});
+  const queriesMetaRef = useRef([]);
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [lastRefreshAt, setLastRefreshAt] = useState(null);
+  const makeCanonicalKey = useCallback((tool_name, args) => {
+    const tn = String(tool_name || "");
+    const a = (args && typeof args === "object") ? args : {};
+    try {
+      const stable = JSON.stringify(a, Object.keys(a).sort());
+      return `${tn}::${btoa(unescape(encodeURIComponent(stable)))}`;
+    } catch {
+      return `${tn}::${JSON.stringify(a)}`;
+    }
+  }, []);
+  const ROW_LIST_TOOLS = new Set([
+    "list_documents", "run_database_query", "search_documents",
+    "search_doctype", "get_pending_approvals",
+  ]);
+
+  const THROW_AWAY_KEYS_ON_RESULT = new Set([
+    "success", "error", "error_type", "error_code", "execution_time",
+    "audit_logged", "traceback", "message",
+  ]);
+
+  const normaliseToolResultForFrontend = useCallback((toolName, rawPayload) => {
+    if (rawPayload == null) return rawPayload;
+    let out = rawPayload;
+    if (ROW_LIST_TOOLS.has(toolName) && typeof out === "object") {
+      const data = out.data;
+      if (Array.isArray(data)) {
+        const extras = {};
+        for (const [k, v] of Object.entries(out)) {
+          if (THROW_AWAY_KEYS_ON_RESULT.has(k)) continue;
+          extras[k] = v;
+        }
+        const decorated = Array.from(data);
+        Object.assign(decorated, extras);
+        out = decorated;
+      }
+    } else if (typeof out === "object" && !Array.isArray(out)) {
+      const cleaned = {};
+      for (const [k, v] of Object.entries(out)) {
+        if (THROW_AWAY_KEYS_ON_RESULT.has(k)) continue;
+        cleaned[k] = v;
+      }
+      if ("label" in cleaned && !("labels" in cleaned)) cleaned.labels = cleaned.label;
+      if ("labels" in cleaned && !("label" in cleaned)) cleaned.label = cleaned.labels;
+      if ("value" in cleaned && !("values" in cleaned)) cleaned.values = cleaned.value;
+      if ("values" in cleaned && !("value" in cleaned)) cleaned.value = cleaned.values;
+      out = cleaned;
+    }
+    return out;
+  }, []);
+
   const threadId = useRef(currentThreadId);
   const abortRef = useRef(null);
   const lastPromptRef = useRef(null);
@@ -233,11 +288,191 @@ export function DashboardProvider({ children }) {
     },
     [pendingThreads],
   );
+  const unwrapCallToolShape = useCallback((call) => {
+    if (
+      call && typeof call === "object" &&
+      (call.name === "callTool" || call.tool === "callTool") &&
+      call.arguments && typeof call.arguments === "object" &&
+      call.arguments.name
+    ) {
+      return { tool: call.arguments.name, args: call.arguments.arguments || {} };
+    }
+    return call;
+  }, []);
+  const queryResolver = useCallback((call) => {
+    call = unwrapCallToolShape(call);
+    if (call?._kind === "run" || call?.kind === "run") {
+      const sid = call.statementId ?? call?.statement_id;
+      if (sid) {
+        const meta = queriesMetaRef.current.find(
+          (q) => (q.statement_id === sid || q.statementId === sid)
+        );
+        if (meta && meta.tool) {
+          const canonicalKey = makeCanonicalKey(meta.tool, meta.args || {});
+          frappe.call({
+            method: "frappe_assistant_core.api.assistant_api.execute_tool",
+            args: { tool_name: meta.tool, arguments: meta.args || {} },
+            callback: (r) => {
+              const raw = r.message?.result !== undefined
+                ? r.message.result
+                : r.message;
+              queryMapRef.current[canonicalKey] = normaliseToolResultForFrontend(meta.tool, raw);
+              queriesMetaRef.current = queriesMetaRef.current.map((q) =>
+                (q.key === meta.key || q.statement_id === sid || q.statementId === sid)
+                  ? { ...q, key: canonicalKey }
+                  : q
+              );
+              setRefreshTick((n) => n + 1);
+            },
+          });
+        }
+      }
+      return undefined;
+    }
+
+    let tool_name = call?.tool ?? call?.toolName ?? call?.name ?? call?.callee ?? null;
+    let args      = call?.args ?? call?.arguments ?? call?.params ?? call?.input ?? call?.options ?? {};
+    if (typeof call === "string") tool_name = call;
+    if (!tool_name) {
+      // eslint-disable-next-line no-console
+      console.warn("[queryResolver] can't determine tool_name from call", call);
+      return undefined;
+    }
+    const key = makeCanonicalKey(tool_name, args);
+    const cache = queryMapRef.current || {};
+    if (Object.prototype.hasOwnProperty.call(cache, key) && cache[key] !== undefined) {
+      return cache[key];
+    }
+    frappe.call({
+      method: "frappe_assistant_core.api.assistant_api.execute_tool",
+      args: { tool_name, arguments: args || {} },
+      callback: (r) => {
+        const raw = r.message?.result !== undefined
+          ? r.message.result
+          : r.message;
+        queryMapRef.current[key] = normaliseToolResultForFrontend(tool_name, raw);
+        if (!queriesMetaRef.current.some((m) => m.tool === tool_name && JSON.stringify(m.args || {}) === JSON.stringify(args || {}))) {
+          queriesMetaRef.current.push({ key, tool: tool_name, args: args || {}, statement_id: null });
+        }
+        setRefreshTick((n) => n + 1);
+      },
+      error: () => {
+        queryMapRef.current[key] = null;
+      },
+    });
+    return undefined;
+  }, [makeCanonicalKey, normaliseToolResultForFrontend, unwrapCallToolShape]);
+
 
   const refresh = useCallback(() => {
-    if (!lastPromptRef.current || isStreaming) return;
-    send(lastPromptRef.current);
-  }, [send, isStreaming]);
+    if (isStreaming) return;
+    setStage("Refreshing data…");
+    frappe.call({
+      method: "frappe_assistant_core.aiko.api.refresh_dashboard_queries",
+      args: { thread_id: threadId.current, legacy_fallback: false },
+      callback: (r) => {
+        const msg = r.message;
+        if (msg?.success) {
+          if (Array.isArray(msg.queries) && msg.queryMap && typeof msg.queryMap === "object") {
+            for (const q of msg.queries) {
+              const canonicalKey = makeCanonicalKey(q.tool, q.args || {});
+              const backendVal = (msg.queryMap || {})[q.key];
+              if (backendVal === undefined) continue;
+              const normalised = normaliseToolResultForFrontend(q.tool, backendVal);
+              queryMapRef.current[canonicalKey] = normalised;
+              q._canonical_key = canonicalKey;
+            }
+          } else if (msg.queryMap && typeof msg.queryMap === "object") {
+            queryMapRef.current = { ...queryMapRef.current, ...msg.queryMap };
+          }
+          if (Array.isArray(msg.queries)) {
+            queriesMetaRef.current = msg.queries;
+          }
+          if (msg.refreshed_at) {
+            setLastRefreshAt(msg.refreshed_at);
+          }
+          setRefreshTick((n) => n + 1);
+          setStage("");
+        } else {
+          setStage("");
+          setConversation((prev) => [...prev, {
+            role: "assistant",
+            content: msg?.error || "Could not refresh live queries.",
+            text: msg?.error || "Could not refresh live queries.",
+            hasCode: false,
+          }]);
+        }
+        try {
+          frappe.call({
+            method: "frappe_assistant_core.aiko.api.refresh_dashboard",
+            args: { thread_id: threadId.current },
+            callback: (r2) => {
+              if (r2.message?.success && r2.message?.ui) {
+                setDashboardCode(normalizeDsl(r2.message.ui));
+              }
+            },
+            error: () => {},
+          });
+        } catch { /* ignore legacy errors */ }
+      },
+      error: () => {
+        setStage("");
+        try {
+          frappe.call({
+            method: "frappe_assistant_core.aiko.api.refresh_dashboard",
+            args: { thread_id: threadId.current },
+            callback: (r) => {
+              if (r.message?.success && r.message?.ui) {
+                setDashboardCode(normalizeDsl(r.message.ui));
+              }
+            },
+            error: () => {},
+          });
+        } catch {}
+      },
+    });
+  }, [isStreaming]);
+
+  const toolProvider = useMemo(() => ({
+  callTool: async (toolName, args) => {
+    if (toolName && typeof toolName === "object") {
+      args = toolName.arguments ?? toolName.args ?? {};
+      toolName = toolName.name ?? toolName.tool ?? toolName.toolName ?? "";
+    }
+    let realToolName = toolName;
+    let realArgs = args || {};
+    if (toolName === "callTool" && realArgs && typeof realArgs === "object" && realArgs.name) {
+      realToolName = realArgs.name;
+      realArgs = realArgs.arguments || {};
+    }
+
+    const canonicalKey = makeCanonicalKey(realToolName, realArgs);
+    const cached = queryMapRef.current[canonicalKey];
+    if (cached !== undefined) {
+      return { isError: false, content: [{ type: "text", text: JSON.stringify(cached) }] };
+    }
+
+    try {
+      const r = await new Promise((resolve, reject) => {
+        frappe.call({
+          method: "frappe_assistant_core.api.assistant_api.execute_tool",
+          args: { tool_name: realToolName, arguments: realArgs },
+          callback: resolve,
+          error: reject,
+        });
+      });
+      const raw = r.message?.result !== undefined ? r.message.result : r.message;
+      const normalised = normaliseToolResultForFrontend(realToolName, raw);
+      queryMapRef.current[canonicalKey] = normalised;
+      setRefreshTick((n) => n + 1);
+      return { isError: false, content: [{ type: "text", text: JSON.stringify(normalised) }] };
+    } catch (err) {
+      console.error(`[toolProvider] ${realToolName} failed`, err);
+      return { isError: true, content: [{ type: "text", text: String(err?.message || err) }] };
+    }
+  },
+}), [normaliseToolResultForFrontend, makeCanonicalKey]);
+
   const loadSession = useCallback((newThreadId) => {
     threadId.current = newThreadId;
     localStorage.setItem("aiko_dashboard_thread_id", newThreadId);
@@ -307,7 +542,7 @@ export function DashboardProvider({ children }) {
         send,
         clear,
         refresh,
-        canRefresh: !!lastPromptRef.current && !isStreaming,
+        canRefresh: dashboardCode !== null && !isStreaming,
         currentThreadId,
         loadSession,
         startNewSession,
@@ -319,6 +554,10 @@ export function DashboardProvider({ children }) {
         mailTo, setMailTo,
         mailFormat, setMailFormat,
         mailStatus, setMailStatus,
+        queryResolver,
+        refreshTick,
+        lastRefreshAt,
+        toolProvider,
       }}
     >
       {children}

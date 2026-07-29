@@ -41,77 +41,111 @@ def _build_component_groups_section(spec: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
-# WORKED EXAMPLES — full root = Stack([...]) DSL, mirroring NoX AI's
-# toolExamples pattern. These are the single biggest lever for output quality:
-# the model copies structure from these far more reliably than from prose rules.
+# WORKED EXAMPLES.
 #
-# IMPORTANT — VERIFY BEFORE SHIPPING:
-# Every function/component name used below (Query, @Count, @Sum, @Round, @Each,
-# @Index, Callout, Tag, Series, Col) must exist in your actual
-# generated/component-spec.json. These were chosen to match ONLY the helpers
-# that NoX AI's own working examples use (Query, @Count, @Sum, @Round, @Each,
-# @Index) — NOT invented ones like @Filter / @GroupCount / @Avg, which have no
-# confirmed runtime support and will cause the model to hallucinate behavior.
-# If your backend query tools return raw unfiltered rows (not pre-aggregated),
-# breakdowns below assume a dedicated query (e.g. get_asset_status_breakdown)
-# that returns already-grouped arrays server-side, the same pattern NoX AI uses
-# for get_store_performance / get_product_performance — group on the server,
-# not with a client-side DSL filter helper.
-#
-# Callout naming: standardized on `Callout(severity, title, description)` with
-# severities "error" / "warning" / "info" throughout, since that's the pattern
-# already established elsewhere in this prompt (ALERTS AND HEALTH ITEMS
-# section). If your spec instead defines `TextCallout` with "success" /
-# "neutral" variants, replace every `Callout` below with `TextCallout` and
-# swap severities accordingly — but pick ONE name and use it everywhere,
-# never both in the same prompt.
+# CRITICAL — STATEMENT ORDER: the DSL interpreter evaluates top-level
+# `name = expr` statements in source order, with NO hoisting. Every variable
+# referenced inside an expression MUST already be defined by an earlier
+# statement. `kpiStrip = Stack([kpi1, kpi2, ...])` MUST come AFTER kpi1,
+# kpi2, etc. are defined — never before. Getting this backwards doesn't
+# error loudly; it silently resolves the forward-referenced names as
+# empty/undefined, so every KPI in that strip renders as 0. This exact bug
+# has broken real dashboards before — verify every example below (and every
+# dashboard you generate) never references a name before its own
+# `name = ...` line appears earlier in the source.
 # ---------------------------------------------------------------------------
 _TOOL_EXAMPLES = [
-    # 1. Fleet-wide asset summary
-    'Example — Asset Summary Dashboard (PREFERRED PATTERN — always aim for this level of detail):\n'
-    'root = Stack([masthead, kpiStrip, Separator(), sec1, sec2, insightsSection], "column", "l")\n'
-    'masthead = Card([CardHeader("Asset Summary — Fleet", "All recorded assets · Kofleetz")], "sunk")\n'
-    'assets = Query("get_assets", {}, [])\n'
-    'statusBreakdown = Query("get_asset_status_breakdown", {}, [])\n'
-    'typeBreakdown = Query("get_asset_type_breakdown", {}, [])\n'
-    'kpiStrip = Stack([kpi1, kpi2, kpi3, kpi4, kpi5], "row", "m", "stretch", "start", true)\n'
+    # 1. CANONICAL PATTERN — copy this shape for any read-only, multi-chart
+    # dashboard. Uses only real, callable tools (list_documents,
+    # aggregate_documents, run_database_query) with real argument shapes.
+    'Example — Fleet P&L Dashboard (CANONICAL PATTERN):\n'
+    'root = Stack([masthead, kpiStrip, Separator(), trend1, profitDist, perVeh, perDrv, ledger, insights], "column", "l")\n'
+    'masthead = Card([CardHeader("Profit & Loss Dashboard", "Trips, revenue trends, and profit-status distribution across the fleet")], "sunk")\n'
+    '# --- Queries (each evaluated once, deduped automatically by key)\n'
+    'recentTrips = Query("run_database_query", {"query": "SELECT name, vehicle, vehicle_number_plate, driver_name, planned_start_at, planned_distance, actual_distance, status FROM `tabTrip` ORDER BY planned_start_at DESC LIMIT 50", "limit": 50}, [])\n'
+    'completedTrips = Query("run_database_query", {"query": "SELECT name, status FROM `tabTrip` WHERE status = \'Completed\' ORDER BY planned_start_at DESC LIMIT 100", "limit": 100}, [])\n'
+    'monthlyTrend = Query("aggregate_documents", {"doctype": "Trip", "group_by": "creation", "date_bucket": "month", "aggregate": "count", "filters": {}, "order_by": "label asc", "limit": 24}, [])\n'
+    'byStatus     = Query("aggregate_documents", {"doctype": "Trip", "group_by": "status",  "aggregate": "count", "filters": {}}, [])\n'
+    'byVehicle    = Query("aggregate_documents", {"doctype": "Trip", "group_by": "vehicle", "aggregate": "count", "filters": {}, "limit": 20}, [])\n'
+    'byDriver     = Query("aggregate_documents", {"doctype": "Trip", "group_by": "driver",  "aggregate": "count", "filters": {}, "limit": 20}, [])\n'
+    '# --- KPI strip (3-5 Cards, each 3 lines: small label, large-heavy number, small subtitle).\n'
+    '# NOTE ORDER: kpi1..kpi4 defined FIRST, kpiStrip (which references them) LAST.\n'
+    'kpi1 = Card([TextContent("01 · TOTAL TRIPS", "small"), TextContent("" + @Count(recentTrips), "large-heavy"), TextContent("All trips in the last 50 records", "small")])\n'
+    'kpi2 = Card([TextContent("02 · COMPLETED TRIPS", "small"), TextContent("" + @Count(completedTrips), "large-heavy"), TextContent("Successfully completed trips", "small")])\n'
+    'kpi3 = Card([TextContent("03 · VEHICLES ACTIVE", "small"), TextContent("" + @Count(byVehicle.label), "large-heavy"), TextContent("Distinct vehicles with trips", "small")])\n'
+    'kpi4 = Card([TextContent("04 · DRIVERS ACTIVE", "small"), TextContent("" + @Count(byDriver.label), "large-heavy"), TextContent("Distinct drivers assigned", "small")])\n'
+    'kpiStrip = Stack([kpi1, kpi2, kpi3, kpi4], "row", "m", "stretch", "start", true)\n'
+    '# --- Charts — each reuses an aggregate declared above (no duplicate Query calls)\n'
+    'trend1   = Card([CardHeader("01 · Monthly Trip Creation Trend", "Trip count per month over the last year"), LineChart(monthlyTrend.label, [Series("Trip Count", monthlyTrend.value)], "linear", "Month", "Trips"), Button("Refresh trend", Action([@Run(monthlyTrend)]))])\n'
+    'profitDist = Card([CardHeader("02 · Trips by Profit Status", "Distribution of trips across their current status"), PieChart(byStatus.label, byStatus.value, "donut")])\n'
+    'perVeh   = Card([CardHeader("03 · Trips per Vehicle", "Trip count grouped by each vehicle"), BarChart(byVehicle.label, [Series("Trips", byVehicle.value)], "grouped", "Vehicle", "Trip Count")])\n'
+    'perDrv   = Card([CardHeader("04 · Trips per Driver", "Trip count assigned per driver"), BarChart(byDriver.label, [Series("Trips", byDriver.value)], "grouped", "Driver", "Trip Count")])\n'
+    '# --- Row-level ledger table — column-oriented, each Col holds its own array\n'
+    'ledger   = Card([CardHeader("05 · Trip Ledger", "Recent trips — vehicle, driver, status, and schedule"), Table([\n'
+    '  Col("Trip ID",         @Each(recentTrips, "t", t.name)),\n'
+    '  Col("Vehicle",         @Each(recentTrips, "t", t.vehicle_number_plate)),\n'
+    '  Col("Driver",          @Each(recentTrips, "t", t.driver_name)),\n'
+    '  Col("Status",          @Each(recentTrips, "t", Tag(t.status, null, "sm", t.status == "Completed" ? "success" : t.status == "Scheduled" ? "info" : t.status == "In Progress" ? "warning" : "neutral"))),\n'
+    '  Col("Planned Start",   @Each(recentTrips, "t", t.planned_start_at)),\n'
+    '  Col("Planned Dist (km)", @Each(recentTrips, "t", "" + t.planned_distance), "number")\n'
+    '])])\n'
+    '# --- Insights (LLM-written prose; static, not re-computed on Refresh)\n'
+    'insights = Card([CardHeader("Health & Insights", "Key observations from current P&L data"), Stack([\n'
+    '  Callout("info", "Read-only Queries", "All charts use aggregate_documents — refresh the dashboard any time for live counts; nothing is written to Frappe on refresh."),\n'
+    '  Callout("warning", "Missing actual_distance rows", "If planned_distance vs actual_distance gaps appear, check odometer entries for the last trips above."),\n'
+    '  Callout("info", "Live Data", "All aggregates come from the Trip doctype directly — numbers update on every Refresh click.")\n'
+    '], "row", "m", "stretch", "start", true)], "sunk")\n',
+
+    # 2. GENERIC PATTERN — the tool names used here (list_documents,
+    # aggregate_documents) are real and callable. Substitute doctype/field
+    # arguments for whatever the user's actual request needs — never invent
+    # a bespoke get_<domain>_breakdown tool, and never fall back to
+    # run_python_code + a printed report for data a dashboard will display.
+    'Example — Generic Category Breakdown (use for ANY doctype/breakdown):\n'
+    'root = Stack([masthead, kpiStrip, Separator(), sec1, sec2], "column", "l")\n'
+    'masthead = Card([CardHeader("Asset Breakdown", "Assets grouped by category")], "sunk")\n'
+    'assets = Query("list_documents", {"doctype": "Asset", "fields": ["name", "purchase_cost", "asset_category", "status"], "limit": 1000}, [])\n'
+    'byCategory = Query("aggregate_documents", {"doctype": "Asset", "group_by": "asset_category"}, [])\n'
+    'byStatus = Query("aggregate_documents", {"doctype": "Asset", "group_by": "status"}, [])\n'
     'kpi1 = Card([TextContent("01 · TOTAL ASSETS", "small"), TextContent("" + @Count(assets), "large-heavy"), TextContent("All recorded assets", "small")])\n'
-    'kpi2 = Card([TextContent("02 · AVAILABLE", "small"), TextContent("" + assets.availableCount, "large-heavy"), TextContent("Not yet installed", "small")])\n'
-    'kpi3 = Card([TextContent("03 · INSTALLED", "small"), TextContent("" + assets.installedCount, "large-heavy"), TextContent("Currently on a vehicle", "small")])\n'
-    'kpi4 = Card([TextContent("04 · TOTAL VALUE", "small"), TextContent("" + @Round(@Sum(assets.cost), 0), "large-heavy"), TextContent("Combined purchase cost (INR)", "small")])\n'
-    'kpi5 = Card([TextContent("05 · TOTAL KM USED", "small"), TextContent("" + @Sum(assets.kmUsed), "large-heavy"), TextContent("Across all installed assets", "small")])\n'
+    'kpi2 = Card([TextContent("02 · TOTAL VALUE", "small"), TextContent("" + @Round(@Sum(assets.purchase_cost), 0), "large-heavy"), TextContent("Combined purchase cost (INR)", "small")])\n'
+    'kpiStrip = Stack([kpi1, kpi2], "row", "m", "stretch", "start", true)\n'
+    'sec1 = Card([CardHeader("01 · Assets by Category", "Count of assets per category"), BarChart(byCategory.label, [Series("Count", byCategory.value)], "grouped", "Category", "Count")])\n'
+    'sec2 = Card([CardHeader("02 · Assets by Status", "Available vs Installed share"), SingleStackedBarChart(byStatus.label, byStatus.value)])',
+
+    # 3. SUM / DATE-BUCKET AGGREGATION — the only example demonstrating
+    # aggregate_documents' sum/avg mode and month-bucketed trends. Copy
+    # these exact argument keys.
+    'Example — Monthly Revenue Trend + Sum-by-Group (real param names — copy exactly):\n'
+    'root = Stack([masthead, kpiStrip, Separator(), sec1, sec2], "column", "l")\n'
+    'masthead = Card([CardHeader("Revenue Overview", "Invoice revenue by month and by customer")], "sunk")\n'
+    'invoices = Query("list_documents", {"doctype": "Sales Invoice", "fields": ["name", "grand_total"], "limit": 1000}, [])\n'
+    'revenueByMonth = Query("aggregate_documents", {"doctype": "Sales Invoice", "group_by": "posting_date", "date_bucket": "month", "aggregate": "sum", "value_field": "grand_total", "filters": {}}, [])\n'
+    'revenueByCustomer = Query("aggregate_documents", {"doctype": "Sales Invoice", "group_by": "customer_name", "aggregate": "sum", "value_field": "grand_total"}, [])\n'
+    'kpi1 = Card([TextContent("01 · TOTAL INVOICED", "small"), TextContent("" + @Round(@Sum(invoices.grand_total), 0), "large-heavy"), TextContent("Sum of all Sales Invoice totals (INR)", "small")])\n'
+    'kpi2 = Card([TextContent("02 · MONTHS TRACKED", "small"), TextContent("" + @Count(revenueByMonth), "large-heavy"), TextContent("Distinct months with revenue", "small")])\n'
+    'kpiStrip = Stack([kpi1, kpi2], "row", "m", "stretch", "start", true)\n'
+    'sec1 = Card([CardHeader("01 · Revenue by Month", "Monthly total, bucketed"), LineChart(revenueByMonth.label, [Series("Revenue (INR)", revenueByMonth.value)], "linear", "Month", "Revenue (INR)")])\n'
+    'sec2 = Card([CardHeader("02 · Revenue by Customer", "Sum of grand_total grouped by customer"), HorizontalBarChart(revenueByCustomer.label, [Series("Revenue (INR)", revenueByCustomer.value)], "grouped", "Revenue (INR)", "Customer")])',
+
+    # 4. RICH PATTERN — nested composite sections (sec1 built FROM sec1a/
+    # sec1b) demonstrate the same ordering rule applies recursively: any
+    # composite Stack/Card built from other named sections must be defined
+    # strictly after every section it references.
+    'Example — Asset Summary Dashboard (RICH PATTERN, nested sections):\n'
+    'root = Stack([masthead, kpiStrip, Separator(), sec1, sec2, insightsSection], "column", "l")\n'
+    'masthead = Card([CardHeader("Asset Summary — Fleet", "All recorded assets")], "sunk")\n'
+    'assets = Query("list_documents", {"doctype": "Asset", "fields": ["name", "asset_id", "asset_type", "status", "condition", "cost", "vehicle"], "limit": 1000}, [])\n'
+    'statusBreakdown = Query("aggregate_documents", {"doctype": "Asset", "group_by": "status"}, [])\n'
+    'typeBreakdown = Query("aggregate_documents", {"doctype": "Asset", "group_by": "asset_type"}, [])\n'
+    'kpi1 = Card([TextContent("01 · TOTAL ASSETS", "small"), TextContent("" + @Count(assets), "large-heavy"), TextContent("All recorded assets", "small")])\n'
+    'kpi2 = Card([TextContent("02 · TOTAL VALUE", "small"), TextContent("" + @Round(@Sum(assets.cost), 0), "large-heavy"), TextContent("Combined purchase cost (INR)", "small")])\n'
+    'kpiStrip = Stack([kpi1, kpi2], "row", "m", "stretch", "start", true)\n'
+    'sec1a = Card([CardHeader("01 · Assets by Type", "Count of assets per category"), BarChart(typeBreakdown.label, [Series("Count", typeBreakdown.value)], "grouped", "Type", "Count")])\n'
+    'sec1b = Card([CardHeader("02 · Assets by Status", "Available vs Installed share"), SingleStackedBarChart(statusBreakdown.label, statusBreakdown.value)])\n'
     'sec1 = Stack([sec1a, sec1b], "row", "m", "stretch")\n'
-    'sec1a = Card([CardHeader("01 · Assets by Type", "Count of assets per category"), BarChart(typeBreakdown.type, [Series("Count", typeBreakdown.count)], "grouped", "Type", "Count")])\n'
-    'sec1b = Card([CardHeader("02 · Assets by Status", "Available vs Installed share"), SingleStackedBarChart(statusBreakdown.status, statusBreakdown.count)])\n'
-    'sec2 = Card([CardHeader("03 · Asset Ledger", "Every asset — ID, type, status, condition, cost, vehicle"), Table([Col("Asset ID", assets.assetId), Col("Type", assets.type), Col("Condition", assets.condition), Col("Cost (INR)", assets.cost, "number"), Col("Vehicle Assigned", assets.vehicle), Col("Status", @Each(assets, "a", Tag(a.status, null, "sm", a.status == "Installed" ? "success" : "neutral")))])])\n'
-    'insightsSection = Card([CardHeader("Health & Alerts", "Records missing key data or needing attention"), Stack([Callout("error", "Tyre — Purchase date not recorded", "Asset AST-2026-0002 has no purchase date on record."), Callout("warning", "Tyre — Purchase cost not recorded", "Asset AST-2026-0002 has no purchase cost recorded."), Callout("info", "Battery — Fully recorded", "Asset AST-2026-0001 has all details: cost, install status, and condition on file.")], "row", "m", "stretch", "start", true)], "sunk")',
-
-    # 2. Vehicle fleet status
-    'Example — Vehicle Fleet Status (RICH PATTERN):\n'
-    'root = Stack([masthead, kpiStrip, Separator(), sec1, sec2, insightsSection], "column", "l")\n'
-    'masthead = Card([CardHeader("Vehicle Fleet", "Live status of every vehicle in the fleet")], "sunk")\n'
-    'vehicles = Query("get_vehicles", {}, [])\n'
-    'statusBreakdown = Query("get_vehicle_status_breakdown", {}, [])\n'
-    'kpiStrip = Stack([kpi1, kpi2, kpi3], "row", "m", "stretch", "start", true)\n'
-    'kpi1 = Card([TextContent("01 · TOTAL VEHICLES", "small"), TextContent("" + @Count(vehicles), "large-heavy"), TextContent("Registered in the system", "small")])\n'
-    'kpi2 = Card([TextContent("02 · ACTIVE", "small"), TextContent("" + vehicles.activeCount, "large-heavy"), TextContent("Currently on the road", "small")])\n'
-    'kpi3 = Card([TextContent("03 · IN MAINTENANCE", "small"), TextContent("" + vehicles.maintenanceCount, "large-heavy"), TextContent("Off-road for service", "small")])\n'
-    'sec1 = Card([CardHeader("01 · Vehicles by Status", "Fleet distribution across states"), BarChart(statusBreakdown.status, [Series("Vehicles", statusBreakdown.count)], "grouped", "Status", "Count")])\n'
-    'sec2 = Card([CardHeader("02 · Vehicle Ledger", "Registration, driver, status, and odometer per vehicle"), Table([Col("Vehicle No.", vehicles.regNo), Col("Assigned Driver", vehicles.driver), Col("Odometer (km)", vehicles.odometer, "number"), Col("Status", @Each(vehicles, "v", Tag(v.status, null, "sm", v.status == "Active" ? "success" : v.status == "Maintenance" ? "warning" : "neutral")))])])\n'
-    'insightsSection = Card([CardHeader("Fleet Notes", "Key observations from current fleet status"), Stack([Callout("warning", "Maintenance Load", "Vehicles flagged as Maintenance should be checked for overdue service intervals."), Callout("info", "Utilization", "Compare Active count against total fleet size to gauge daily utilization rate."), Callout("info", "Unassigned", "Any vehicle without a driver listed may need reassignment before next dispatch.")], "row", "m", "stretch", "start", true)], "sunk")',
-
-    # 3. Battery lifecycle report
-    'Example — Battery Lifecycle Report (RICH PATTERN):\n'
-    'root = Stack([masthead, kpiStrip, Separator(), sec1, sec2, insightsSection], "column", "l")\n'
-    'masthead = Card([CardHeader("Battery Lifecycle Report", "Install date, cycles, and health per battery asset")], "sunk")\n'
-    'batteries = Query("get_assets", {"type": "Battery"}, [])\n'
-    'kpiStrip = Stack([kpi1, kpi2, kpi3], "row", "m", "stretch", "start", true)\n'
-    'kpi1 = Card([TextContent("01 · TOTAL BATTERIES", "small"), TextContent("" + @Count(batteries), "large-heavy"), TextContent("Tracked battery assets", "small")])\n'
-    'kpi2 = Card([TextContent("02 · AVG AGE", "small"), TextContent("" + @Round(batteries.avgAgeDays, 0), "large-heavy"), TextContent("Days since purchase (avg)", "small")])\n'
-    'kpi3 = Card([TextContent("03 · NEEDING REPLACEMENT", "small"), TextContent("" + batteries.wornCount, "large-heavy"), TextContent("Condition marked Worn", "small")])\n'
-    'sec1 = Card([CardHeader("01 · Battery Age Distribution", "Days in service per battery"), HorizontalBarChart(batteries.assetId, [Series("Age (days)", batteries.ageDays)], "grouped", "Age (days)", "Asset ID")])\n'
-    'sec2 = Card([CardHeader("02 · Battery Ledger", "Full detail per battery asset"), Table([Col("Asset ID", batteries.assetId), Col("Vehicle", batteries.vehicle), Col("Age (days)", batteries.ageDays, "number"), Col("Cost (INR)", batteries.cost, "number"), Col("Condition", @Each(batteries, "b", Tag(b.condition, null, "sm", b.condition == "Worn" ? "danger" : b.condition == "Good" ? "success" : "neutral")))])])\n'
-    'insightsSection = Card([CardHeader("Lifecycle Notes", "What to watch for in battery health"), Stack([Callout("warning", "Aging Units", "Batteries older than typical service life should be scheduled for inspection."), Callout("info", "Replacement Planning", "Cross-check Worn condition batteries against vehicle assignment to plan downtime."), Callout("info", "Healthy Units", "Batteries marked New or Good condition require no immediate action.")], "row", "m", "stretch", "start", true)], "sunk")',
+    'sec2 = Card([CardHeader("03 · Asset Ledger", "Every asset — ID, type, status, condition, cost, vehicle"), Table([Col("Asset ID", assets.asset_id), Col("Type", assets.asset_type), Col("Condition", assets.condition), Col("Cost (INR)", assets.cost, "number"), Col("Vehicle Assigned", assets.vehicle), Col("Status", @Each(assets, "a", Tag(a.status, null, "sm", a.status == "Installed" ? "success" : "neutral")))])])\n'
+    'insightsSection = Card([CardHeader("Health & Alerts", "Records missing key data or needing attention"), Stack([Callout("warning", "Missing Purchase Data", "Some assets have no purchase date or cost recorded — review before next audit."), Callout("info", "Fully Recorded", "Most assets have complete cost, install status, and condition data on file.")], "row", "m", "stretch", "start", true)], "sunk")',
 ]
 
 
@@ -134,131 +168,174 @@ def build_dashboard_system_prompt() -> str:
         f"{groups_section}\n"
 
         "=== SYNTAX RULES ===\n"
-        "- CRITICAL: every component call uses POSITIONAL arguments ONLY. NEVER use "
-        "named/keyword arguments like `children:`, `title:`, `text:`, `labels:`, `series:`. "
-        "This is not Python or JS keyword syntax — the parser only accepts values in order, comma-separated.\n"
-        "  WRONG:  Card(children: [CardHeader(title: \"Summary\")])\n"
-        "  RIGHT:  Card([CardHeader(\"Summary\")])\n"
-        "  Any `key: value` pair anywhere in the output is a syntax error and renders a BLANK dashboard.\n"
+        "- Every component call uses POSITIONAL arguments ONLY — never `key: value` (that is Python/JS "
+        "keyword syntax and is a hard syntax error here, renders a blank dashboard).\n"
+        "  WRONG:  Card(children: [CardHeader(title: \"Summary\")])   RIGHT:  Card([CardHeader(\"Summary\")])\n"
         "- Every response MUST assign the result to a variable named exactly `root`: `root = RootComponent([...])`.\n"
-        "- Use Stack with direction \"row\" for side-by-side layouts, \"column\" (default) for vertical layouts.\n"
+        "- Stack: direction \"row\" for side-by-side, \"column\" (default) for vertical.\n"
         "- Tables are COLUMN-oriented: Table([Col(...), Col(...)]) — each Col holds its own data array.\n"
-        "- Do NOT pass more arguments than a component's signature defines.\n"
-        "- Charts render with a built-in color palette that cycles automatically across multiple hues (violet, "
-        "blue, teal, amber, rose, etc.) — no color props are needed. NEVER force every chart, bar, or slice into "
-        "the same single color. When a chart has multiple categories or multiple Series, each one MUST get a "
-        "visually distinct color from the palette so they're distinguishable at a glance — a bar chart with 4 "
-        "categories that all render the same shade of violet is a bug, not a design choice. Two side-by-side "
-        "chart Cards on the same dashboard should also look visually distinct from each other (different chart "
-        "type, or different category sets), not just two identical-looking violet bar charts back to back.\n\n"
+        "- Data property access uses direct dot notation (`collection.field`) only.\n\n"
 
+        "=== NO JAVASCRIPT — THE DSL IS DECLARATIVE, NOT JS (CRITICAL) ===\n"
+        "The parser does not understand JavaScript. FORBIDDEN, and all silently produce parser errors or "
+        "zero/empty values instead of a loud failure:\n"
+        "  ❌ .map(), .filter(), .reduce() or any arrow function\n"
+        "  ❌ ?? (nullish coalescing), || (logical OR), ?. (optional chaining)\n"
+        "  ❌ inline arithmetic operators (+, -, *, /) on Query results\n"
+        "The ONLY place a ternary (`cond ? a : b`) is legal is inside Tag() or @Each() for dynamic tag "
+        "coloring — never anywhere else. Never transform/map/filter/reduce a Query result inline; if you "
+        "need a different shape, run a separate Query with the right filters/aggregation instead.\n\n"
+
+        "=== THE @-FUNCTION LIST BELOW IS THE ENTIRE UNIVERSE — CLOSED, NOT ILLUSTRATIVE (CRITICAL) ===\n"
+        "This is not a list of examples or common cases. It is the COMPLETE, EXHAUSTIVE set of every "
+        "@-prefixed function that exists in the DSL runtime. There is nothing else, ever:\n"
+        "    @Count   @Filter   @Each   @Sort   @Set   @Run   @Round   @Sum\n"
+        "If a task seems to need a function not on this list — @Divide, @Avg, @Average, @ParseInt, "
+        "@ToNumber, @Cast, @Multiply, @Subtract, @GroupCount, @Percent, or ANYTHING else, including "
+        "names that sound obviously reasonable — that function DOES NOT EXIST. Do not write it anyway "
+        "on the assumption it might work. Do not reason about whether the runtime 'probably' supports "
+        "common helpers like parseInt or division — it does not, unless the exact name is in the list "
+        "above. Before writing any `@Something(...)`, check the token against this list character by "
+        "character. If it is not an exact match to one of these 8 names, STOP and restructure the "
+        "expression using only these 8, or drop that piece of the dashboard entirely.\n"
+        "Consequence of getting this wrong: it is NOT a silent no-op for one node. One unrecognized "
+        "@-function ANYWHERE in the DSL aborts parsing of the WHOLE tree — every KPI, chart, and table "
+        "on the page renders blank or zero, including ones with perfectly correct bindings elsewhere.\n"
+        "For a ratio/percentage (e.g. a resolution rate), never write inline math with any function. "
+        "Use two plain @Count values concatenated as text instead:\n"
+        '  Callout("info", "Resolution Rate", "" + @Count(@Filter(issues, "status", "==", "Resolved")) '
+        '+ " of " + @Count(issues) + " issues resolved so far.")\n'
+        "If a true computed percentage is required, compute it server-side (Python) and insert the "
+        "already-computed number as a plain string — never invent client-side math in the DSL.\n\n"
+
+        "=== aggregate_documents RESULTS: USE THE TOOL'S OWN TOTAL, NEVER RE-DERIVE IT ===\n"
+        "An aggregate_documents result already provides EVERYTHING a KPI needs as top-level fields — "
+        "do not reconstruct them from the .label/.value arrays:\n"
+        "  .label / .labels   → array of category names (one per group) — for chart axes/legends only\n"
+        "  .value / .values    → array of per-GROUP numbers (one per group) — for chart series only, "
+        "NEVER for a grand total\n"
+        "  .total_count / .count_sum → the single already-summed total across ALL groups — use THIS "
+        "for any KPI that wants 'total entries', 'total X', or similar\n"
+        "  .total_groups / .count     → the number of distinct groups — use for 'distinct X' KPIs\n"
+        "FORBIDDEN: @Count(someAggregateResult.value) to try to get a grand total — .value is already "
+        "an array of per-group numbers, not rows; counting its elements gives you the number of groups "
+        "(duplicating .total_groups), not the sum of all entries, and some runtimes will simply return "
+        "0 for @Count over a plain-number array instead of a row array.\n"
+        "  WRONG:  TextContent(\"\" + @Count(byVehicle.value), \"large-heavy\")\n"
+        "  RIGHT:  TextContent(\"\" + byVehicle.total_count, \"large-heavy\")\n"
+        "  For distinct-group counts, @Count(byVehicle.label) IS correct (label is one name per group).\n\n"
+
+        "=== STATEMENT ORDER — NEVER FORWARD-REFERENCE A VARIABLE (CRITICAL) ===\n"
+        "Top-level `name = expr` statements are evaluated strictly in the order they appear, with NO "
+        "hoisting. Every name you reference MUST already be defined by an earlier statement in the "
+        "same DSL output. This applies recursively — a composite Stack/Card built from other named "
+        "sections (e.g. `sec1 = Stack([sec1a, sec1b])`) must be defined AFTER sec1a and sec1b, exactly "
+        "the same rule as `kpiStrip = Stack([kpi1, kpi2, ...])` needing to come AFTER kpi1, kpi2, etc.\n"
+        "  WRONG order: kpiStrip = Stack([kpi1, kpi2])   ...then later...   kpi1 = Card([...])\n"
+        "  RIGHT order:  kpi1 = Card([...])   kpi2 = Card([...])   kpiStrip = Stack([kpi1, kpi2])\n"
+        "Getting this backwards does not error — it silently resolves the forward-referenced names as "
+        "undefined, so every value in that group renders as 0/blank. Before finalizing output, scan "
+        "top-to-bottom and confirm every name used anywhere was already assigned on an earlier line.\n\n"
+
+        "=== DATA BINDING — Query MUST BE TOP-LEVEL, NEVER INLINE ===\n"
+        "Assign every Query(...) to its own top-level variable; never inline it inside a component "
+        "argument.\n"
+        "  WRONG:  Col(\"Amount\", Query(\"list_documents\", {...}, []).amount, \"number\")\n"
+        "  RIGHT:  expenses = Query(\"list_documents\", {\"doctype\": \"Expense\", \"fields\": [\"amount\"], \"limit\": 1000}, [])\n"
+        "          Col(\"Amount\", expenses.amount, \"number\")\n\n"
+
+        "=== @-FUNCTIONS MUST BE INLINE ONLY — NEVER AS TOP-LEVEL ASSIGNMENTS (CRITICAL) ===\n"
+        "@-prefixed functions (@Count, @Sum, @Filter, @Each, @Sort, @Set, @Run, @Round) can ONLY "
+        "appear inline inside a component prop — never as a standalone `name = expr` top-level "
+        "statement. The JS runtime does NOT support evaluating @-functions at assignment time; using "
+        "them at the top level causes a parsing error that silently aborts the ENTIRE dashboard "
+        "(every KPI, chart, and table renders as blank or zero).\n"
+        "  WRONG:  totalMovements = @Count(movements)\n"
+        "  WRONG:  uniqueAssets = @Count(byCategory.label)\n"
+        "  RIGHT:  TextContent(\"\" + @Count(movements), \"large-heavy\")\n"
+        "  RIGHT:  TextContent(\"\" + @Count(@Set(movements.asset)), \"large-heavy\")\n\n"
+
+        "=== QUERY TOOLS: READ-ONLY ONLY — NEVER put a write tool inside Query() (CRITICAL) ===\n"
+        "Every Query(\"tool_name\", {...}, []) is evaluated on first render, on every Refresh click, on "
+        "every page reload, and potentially on auto-refresh — so it MUST only call read-only tools. Any "
+        "tool starting with create_/update_/insert_/delete_/submit_, or otherwise mutating state, MUST "
+        "NEVER appear inside Query(). Such tools are for one-shot conversational actions only.\n"
+        "  ❌ Query(\"create_dashboard_chart\", {...}, [])  — inserts a new DB row on EVERY refresh\n"
+        "  ❌ Query(\"create_dashboard\", {...}, [])\n"
+        "  ❌ Query(\"create_document\", {...}, [])\n"
+        "Correct substitutions, always read-only:\n"
+        "  Chart/breakdown data   → Query(\"aggregate_documents\", {doctype, group_by, aggregate, "
+        "value_field, date_bucket, filters}) — returns {label, value, groups} that charts consume directly.\n"
+        "  Row listings           → Query(\"list_documents\", {doctype, fields, limit, order_by, filters})\n"
+        "  Free-form SQL rows     → Query(\"run_database_query\", {query: \"SELECT ...\", limit: N}) "
+        "(SELECT-only, safe inside Query even though the name doesn't start with list_/get_)\n"
+        "If a KPI needs a count of rows matching a condition, pass the filter directly into the tool "
+        "args (e.g. aggregate_documents with filters: {docstatus: 1}) rather than "
+        "@Count(@Filter(unfiltered_result, ...)) — faster, and correct on every Refresh.\n\n"
+
+        "=== aggregate_documents / list_documents — FIXED PARAMETER NAMES ===\n"
+        "aggregate_documents accepts ONLY: doctype, group_by, aggregate (\"count\"|\"sum\"|\"avg\", default "
+        "\"count\"), value_field (REQUIRED for sum/avg, omit for count), date_bucket (\"day\"|\"week\"|"
+        "\"month\" — set when group_by is a Date/Datetime field for a trend chart), filters, order_by, "
+        "limit. FORBIDDEN invented keys that silently no-op or error: aggregate_field, "
+        "aggregate_function, group_field, metric, sum_field. group_by must be a REAL fieldname on the "
+        "target doctype (check get_doctype_info if unsure) — never a synthetic value like \"month\" "
+        "unless that literal fieldname exists.\n"
+        "list_documents defaults to fields=[\"name\",\"creation\",\"modified\"] and limit=20 when omitted. "
+        "Any KPI doing @Sum/@Count over a list_documents result MUST pass explicit \"fields\" (the exact "
+        "field(s) needed) and \"limit\": 1000 (the tool's max) — otherwise the field is silently missing "
+        "and the count/sum is capped at 20 records, not the true total. For totals over tables that may "
+        "exceed 1000 rows, use aggregate_documents instead (no row cap).\n\n"
+        "=== list_documents FIELDS — NEVER GUESS A FIELD NAME (CRITICAL) ===\n"
+        "Every fieldname you put in list_documents' \"fields\" array MUST be one of:\n"
+        "  (a) a fieldname you have already seen returned in an ACTUAL tool call result "
+        "in this conversation, or\n"
+        "  (b) a fieldname confirmed via get_doctype_info(doctype) for that exact doctype.\n"
+        "Never guess a plausible-sounding fieldname (e.g. \"service_cost\", \"amount\", \"total\") "
+        "just because it fits the domain. An invalid fieldname does not fail gracefully — it "
+        "throws a raw SQL error (\"Unknown column ... in 'SELECT'\") that aborts the ENTIRE Query, "
+        "blanking that section (or the whole dashboard) on every render and refresh. If you are "
+        "not certain a field exists, call get_doctype_info first, or omit that field/column "
+        "entirely rather than guess.\n\n"
+        
         "=== MANDATORY DASHBOARD STRUCTURE ===\n"
-        "Every dashboard response MUST include ALL of the following sections, in this order:\n"
-        "  1. A masthead Card (variant \"sunk\") with a CardHeader title + subtitle describing the scope of the data.\n"
-        "  2. A KPI strip: a row Stack of 3-5 metric Cards. Each KPI Card has exactly 3 lines: "
-        "a numbered label (\"01 · LABEL\"), a large-heavy value, and a small subtitle explaining the metric "
-        "(include the unit, e.g. \"(INR)\" or \"(km)\", in the subtitle — never in the value line itself).\n"
+        "Every dashboard MUST include, in this order:\n"
+        "  1. A masthead Card (variant \"sunk\"): CardHeader title + subtitle describing data SCOPE only "
+        "— never bake a computed count/sum/average into the subtitle sentence (that number belongs in "
+        "its own KPI tile instead).\n"
+        "  2. A KPI strip: a row Stack of 3-5 metric Cards, each exactly 3 lines (numbered label, "
+        "large-heavy value with no currency/unit in the value itself, small subtitle with the unit e.g. "
+        "\"(INR)\"/\"(km)\").\n"
         "  3. A Separator().\n"
-        "  4. ONE chart section PER DISTINCT BREAKDOWN present in the data — not just two. Identify every "
-        "field in the dataset that has multiple categories, a status/condition/type dimension, a time series, "
-        "or a share-of-whole relationship (e.g. status, category, condition, usage type, ownership, tracking "
-        "status, linkage, financial completeness, technical-field completeness) and give EACH one its own "
-        "chart Card with a numbered CardHeader title (\"01 · ...\", \"02 · ...\"). For a typical asset/fleet "
-        "dataset this means 5-8+ chart sections, not two. Two is the absolute floor for a trivial dataset "
-        "only — the worked examples below show the expected depth, not a ceiling.\n"
-        "  5. A full data Table wrapped in a Card, showing row-level detail not visible in the charts.\n"
-        "  6. A closing insights Card (variant \"sunk\") containing a CardHeader and a row Stack of Callout "
-        "components — mixing severities: at least one \"error\" or \"warning\", and one \"info\".\n"
-        "NEVER produce a minimal or stripped-down response that skips any of these six sections.\n\n"
+        "  4. One chart section per distinct breakdown in the data (status, category, type, condition, "
+        "time series, share-of-whole, etc.) — 5-8+ sections is typical for a real fleet/asset dataset; "
+        "two is the floor only for a trivial dataset. Never use the same chart component twice — "
+        "substitute an appropriate alternate type (BarChart→HorizontalBarChart, PieChart→"
+        "SingleStackedBarChart) rather than dropping a section. A 2-segment share-of-whole is "
+        "SingleStackedBarChart/BarChart, NEVER a 2-slice PieChart (unreadable at a glance).\n"
+        "  5. A full row-level data Table.\n"
+        "  6. A closing insights Card (variant \"sunk\"): CardHeader + a row Stack of Callout components, "
+        "mixing severities (at least one error/warning, one info) — never prose bullets as TextContent.\n"
+        "Every individual fact/metric gets its OWN small Card in a row Stack (wrap=true) — never several "
+        "TextContent lines stacked in one Card, and never a \" | \"-separated summary line.\n\n"
+
+        "=== STATUS COLUMNS & EVERYTHING-IS-A-CARD ===\n"
+        "- Table status/condition/tier columns use @Each(collection, \"alias\", Tag(alias.field, null, "
+        "\"sm\", variant)) for a colored badge, not a plain text Col. Variant: \"success\" (healthy), "
+        "\"warning\" (needs attention), \"danger\" (critical), \"neutral\" (other).\n"
+        "- Every piece of content is nested inside a Card — never place TextContent, MarkDownRenderer, "
+        "Table, or a chart directly as a child of Stack/Tabs/Accordion/Carousel. Never leave a "
+        "Stack/Card empty.\n\n"
 
         "=== TEXT/CODE CONSISTENCY (CRITICAL) ===\n"
-        "The natural-language summary you write (the `data`/text response) and the dashboard code you emit "
-        "(the `root = ...` DSL / `ui` response) describe the SAME dashboard — they are never allowed to "
-        "diverge. Before finalizing your response:\n"
-        "- If your text response mentions, numbers, or lists a chart, KPI, table, or section (e.g. \"Chart 7 — "
-        "Tracking Status\", \"Financial Cards\", \"Alert & Action Board\"), that exact section MUST also exist "
-        "as a real rendered component in `root`. Never describe a chart in prose that you did not also build "
-        "in code.\n"
-        "- Do NOT draft an ambitious outline in the text response and then ship a smaller dashboard in code. "
-        "Build the code FIRST to match the full outline, then write the text summary to match what was "
-        "actually built — never the other way around.\n"
-        "- If you find yourself listing more than the minimum required sections in your text response, treat "
-        "that as a signal that `root` must also contain that many sections. A mismatch between the two is "
-        "always a bug, never acceptable.\n\n"
+        "The prose summary and the `root = ...` DSL describe the SAME dashboard. Build the code first to "
+        "match the full intended structure, then write the prose summary to match what was actually "
+        "built — never describe a section in prose that isn't a real component in `root`.\n\n"
 
-        "=== EVERYTHING IS A CARD ===\n"
-        "- CRITICAL: every single piece of content MUST be nested inside a Card, no exceptions.\n"
-        "- NEVER place TextContent, MarkDownRenderer, Table, or a chart directly as a child of the root Stack, "
-        "another Stack, or Tabs/Accordion/Carousel content — always wrap it in a Card first.\n"
-        "- For a single-metric summary, use exactly: Card([CardHeader(\"Label\"), TextContent(\"Value\", \"large-heavy\")]).\n"
-        "- Never leave a Stack or Card empty — every container must hold actual rendered content.\n\n"
-
-        "=== NEVER STACK MULTIPLE FACTS AS TextContent LINES ===\n"
-        "- FORBIDDEN: a single Card with many separate TextContent lines, one per fact "
-        "(e.g. Card([TextContent(\"Total: 2\"), TextContent(\"Available: 1\"), TextContent(\"Installed: 1\")])).\n"
-        "- CORRECT: every individual fact becomes its OWN small Card, all placed inside a row Stack "
-        "(with wrap = true so tiles reflow on smaller screens), under one CardHeader. This applies regardless "
-        "of what the record type is — assets, vehicles, batteries, drivers, or anything else:\n"
-        "    Card([\n"
-        "      CardHeader(\"Overview\"),\n"
-        "      Stack([\n"
-        "        Card([TextContent(\"Metric A\", \"small\"), TextContent(\"Value A\", \"large-heavy\")]),\n"
-        "        Card([TextContent(\"Metric B\", \"small\"), TextContent(\"Value B\", \"large-heavy\")])\n"
-        "      ], \"row\", \"m\", null, null, true)\n"
-        "    ])\n"
-        "- Any line mixing several stats with \" | \" separators must be broken apart the same way — one small "
-        "Card per stat, in a row Stack. Never output that as a single TextContent line.\n\n"
-
-        "=== ALERTS AND HEALTH ITEMS: ONE Callout PER ITEM ===\n"
-        "- FORBIDDEN: rendering alerts as prose TextContent bullets.\n"
-        "- CORRECT: every alert/health item becomes its own Callout, colored by severity — \"error\" for "
-        "critical/missing-data items, \"warning\" for needs-attention items, \"info\" for good-to-know or "
-        "fully-recorded items. Title is a short label, description is the detail sentence.\n\n"
-
-        "=== STATUS COLUMNS IN TABLES ===\n"
-        "- Whenever a Table includes a status, condition, or tier column (e.g. Available/Installed, "
-        "Active/Maintenance, New/Worn), render it with @Each(collection, \"alias\", Tag(alias.field, null, "
-        "\"sm\", variant)) instead of a plain text Col — this gives the column a colored badge per row.\n"
-        "- Tag variant rules: \"success\" for positive/healthy values, \"warning\" for mid-range/needs-attention, "
-        "\"danger\" for critical/worn/low values, \"neutral\" for anything else.\n\n"
-
-        "=== CHART SELECTION RULES ===\n"
-        "Whenever data has TWO OR MORE related categories/values (a status breakdown, a type breakdown, counts "
-        "per group, a trend over time) it MUST be rendered as a chart — never described in a sentence and never "
-        "restated in words after the chart.\n"
-        "    Category counts / comparisons        → BarChart (or HorizontalBarChart for long labels, e.g. asset/vehicle IDs)\n"
-        "    Share of a whole, 3+ segments         → PieChart, \"donut\" variant\n"
-        "    Share of a whole, exactly 2 segments  → SingleStackedBarChart or BarChart — NEVER PieChart. A "
-        "2-slice donut only ever shows a half-and-half ring and is visually indistinguishable from any other "
-        "2-slice donut, so it carries no information a viewer can read at a glance.\n"
-        "    Trend over time / sequence            → LineChart or AreaChart\n"
-        "    Comparing entities across dimensions  → RadarChart\n"
-        "    Ranked list, few items                → RadialChart\n"
-        "CRITICAL — NEVER use the same chart component twice in one dashboard, and NEVER drop a chart section to "
-"avoid repeating a type. Every dashboard MUST still have at least TWO chart sections. If two breakdowns "
-"would both naturally be the same chart type, substitute a different but still appropriate type for the "
-"second one (e.g. BarChart → HorizontalBarChart, PieChart → SingleStackedBarChart) rather than omitting "
-"the section.\n"
-        "A single standalone number with nothing to compare against (e.g. \"Total assets: 7\") is a KPI tile, "
-        "NOT a chart. Do not add a Table duplicating data already shown in a chart unless row-level identifiers "
-        "aren't visible in the chart itself.\n\n"
-
-        "=== KPI / VALUE FORMATTING ===\n"
-        "- KPI value line: large-heavy, plain number, no currency symbol or unit in the value itself.\n"
-        "- Monetary values: round to whole rupees (or as appropriate), put \"(INR)\" in the subtitle line, never "
-        "in the value line.\n"
-        "- Distances: round to whole km, put \"(km)\" in the subtitle.\n"
-        "- Always give each KPI a short numbered label prefix (\"01 · TOTAL ASSETS\") and a one-line subtitle "
-        "explaining what the metric means.\n"
-        "- If a KPI has a meaningful comparison point available in the tool data (e.g. previous period, target, "
-        "or a natural direction like \"lower is better\" for maintenance counts), use the KpiCard component "
-        "instead of a plain TextContent tile, and pass delta + trend (\"up\"/\"down\"/\"flat\"). Do not invent "
-        "numbers for delta — only include it when the data actually supports a comparison.\n\n"
         "=== WORKED EXAMPLES ===\n"
-        "These show the full expected level of detail. Match this structure and depth for every dashboard "
-        "response — do not produce anything sparser than these examples, even for simple queries; adapt the "
-        "same section pattern (masthead → KPI strip → separator → chart sections → table → insights) to "
-        "whatever data domain the user is asking about.\n\n"
+        "Match this structure and depth for every response — masthead → KPI strip → separator → chart "
+        "sections → table → insights — adapted to whatever data domain the user asks about. Pay close "
+        "attention to the statement ORDER in each example, not just the shapes.\n\n"
         f"{examples_section}\n"
     )
 
