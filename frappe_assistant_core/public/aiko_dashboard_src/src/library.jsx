@@ -3,19 +3,19 @@ import { defineComponent, createLibrary } from "@openuidev/react-lang";
 import { openuiLibrary } from "@openuidev/react-ui/genui-lib";
 import { z } from "zod";
 
-const SAP_PALETTE = ["#2F5233", "#4C6E51", "#A9BFA8", "#D99A3D", "#B54A3F", "#8A8478", "#6C757D"];
+const SAP_PALETTE = ["#5B2C8D", "#7C4DB8", "#8B5CF6", "#4C6EF5", "#F5A623", "#B54A3F", "#6C757D"];
 
 const PALETTE_FAMILIES = [
-  ["#2F5233", "#4C6E51", "#A9BFA8", "#D99A3D", "#B54A3F"],
-  ["#4C6E51", "#6B8F70", "#8FB093", "#D99A3D", "#C97B4A"],
-  ["#D99A3D", "#E8B86D", "#F0D099", "#B54A3F", "#A37B65"],
-  ["#B54A3F", "#C97065", "#D9948A", "#8A8478", "#A09B90"],
-  ["#8A8478", "#A09B90", "#B8B3A8", "#2F5233", "#4C6E51"],
-  ["#6C757D", "#8B9399", "#ABB1B5", "#A9BFA8", "#C4D5C3"],
-  ["#2F5233", "#D99A3D", "#B54A3F", "#8A8478", "#A9BFA8"],
-  ["#4C6E51", "#2F5233", "#6B8F70", "#A9BFA8", "#C4D5C3"],
-  ["#B54A3F", "#D99A3D", "#C97B4A", "#A37B65", "#8A8478"],
-  ["#8A8478", "#6C757D", "#A09B90", "#D99A3D", "#B54A3F"],
+  ["#5B2C8D", "#7C4DB8", "#A480D1", "#C9AEE8", "#E5D6F5"], // core brand purple
+  ["#5B2C8D", "#4C6EF5", "#8B5CF6", "#A480D1", "#C9AEE8"], // purple-blue
+  ["#5B2C8D", "#8B5CF6", "#B57EDC", "#D4A9E8", "#F0DFF7"], // purple-violet
+  ["#5B2C8D", "#F5A623", "#E8C15A", "#C9AEE8", "#8B5CF6"], // purple-gold
+  ["#5B2C8D", "#2F9E5B", "#6FBF8B", "#A480D1", "#C9AEE8"], // purple-green
+  ["#4C2A73", "#6A3FA0", "#8B5CF6", "#B693E0", "#DCC6F0"], // deep-to-light purple
+  ["#7C4DB8", "#9B6DD1", "#BC94E3", "#D9BEF0", "#5B2C8D"], // lighter purple range
+  ["#5B2C8D", "#B54A3F", "#D9948A", "#8B5CF6", "#C9AEE8"], // purple-red accent
+  ["#3E1F63", "#5B2C8D", "#7C4DB8", "#A480D1", "#C9AEE8"], // dark to mid purple
+  ["#5B2C8D", "#6C757D", "#8A8478", "#A480D1", "#C9AEE8"], // purple-neutral
 ];
 
 function pickPalette(props) {
@@ -60,7 +60,7 @@ function aggregateLabels(labels, series) {
 }
 
 const TREND_ICON = { up: "\u25B2", down: "\u25BC", flat: "\u25CF" };
-const TREND_COLOR = { up: "#2F5233", down: "#B54A3F", flat: "#8A8478" };
+const TREND_COLOR = { up: "#5B2C8D", down: "#B54A3F", flat: "#8A8478" };
 
 const KpiCard = defineComponent({
   name: "KpiCard",
@@ -75,9 +75,9 @@ const KpiCard = defineComponent({
     <div className="sap-receipt-line" style={{ position: "relative" }}>
       <div style={{
         width: 34, height: 34, borderRadius: "50%", marginBottom: 8,
-        background: "linear-gradient(135deg, #2F5233, #4C6E51)",
+        background: "linear-gradient(135deg, #5B2C8D, #8B5CF6)",
         display: "flex", alignItems: "center", justifyContent: "center",
-        boxShadow: "0 4px 12px rgba(47,82,51,0.35)",
+        boxShadow: "0 4px 12px rgba(91,44,141,0.35)",
       }}>
         <span style={{ color: "white", fontSize: 14, fontWeight: 700 }}>
           {props.label?.trim()?.[0]?.toUpperCase() || "\u2022"}

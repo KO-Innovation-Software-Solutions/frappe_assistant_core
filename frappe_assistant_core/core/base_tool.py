@@ -137,7 +137,30 @@ class BaseTool(ABC):
                         _("Invalid type for field {0}: expected {1}").format(field, expected_type),
                         frappe.ValidationError,
                     )
+    def validate_fields(self, doctype: str, fields: list) -> Optional[Dict[str, Any]]:
+        """
+        Whitelist fieldnames against the doctype's real schema before they ever
+        reach a Frappe query / raw SQL. Returns an error dict if any fieldname
+        is invalid, else None — call sites should `return` the error dict
+        immediately if this isn't None.
 
+        Prevents a hallucinated fieldname (e.g. from an LLM-generated Query()
+        binding) from throwing a raw, unhandled DB exception (e.g.
+        "1054, Unknown column ... in 'SELECT'") that aborts rendering.
+        """
+        if not fields:
+            return None
+        meta = frappe.get_meta(doctype)
+        valid_fieldnames = {f.fieldname for f in meta.fields}
+        valid_fieldnames.update({"name", "creation", "modified", "owner", "docstatus"})
+        invalid = [f for f in fields if f not in valid_fieldnames]
+        if invalid:
+            return {
+                "success": False,
+                "error": f"Invalid field(s) for {doctype}: {invalid}",
+                "doctype": doctype,
+            }
+        return None
     def check_permission(self) -> None:
         """
         Check if current user has required permissions.

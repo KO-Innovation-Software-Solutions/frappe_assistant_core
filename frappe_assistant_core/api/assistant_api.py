@@ -343,3 +343,84 @@ def _check_assistant_enabled(user: str) -> bool:
         # If there's any error checking the field, default to disabled for security
         api_logger.error(f"Error checking assistant_enabled for user {user}: {e}")
         return False
+@frappe.whitelist()
+def execute_tool(tool_name: str, arguments=None) -> Dict[str, Any]:
+    """Execute a single tool via the ToolRegistry and return its result.
+
+    Used by the Strategy-A dashboard Query resolver for per-Query targeted
+    re-fetches (on cache miss or on @Run button click). Not a bulk endpoint —
+    the backend's refresh_dashboard_queries handles batch refresh.
+
+    Permissions:
+      - caller must have assistant_enabled = 1 on their User row
+      - ToolRegistry enforces plugin enable, FAC tool config,
+        FAC Tool Role Access rules, and Frappe doctype permissions
+      - identical to MCP /tools/call handler
+    """
+    from frappe_assistant_core.constants.definitions import (
+        ErrorCodes, ErrorMessages,
+    )
+    from frappe_assistant_core.core.tool_registry import get_tool_registry
+
+    user = frappe.session.user
+    if not user or user == "Guest":
+        frappe.throw(_("Authentication required"))
+
+    if not _check_assistant_enabled(user):
+        frappe.throw(_("Assistant is not enabled for this user"))
+
+    if not tool_name or not isinstance(tool_name, str):
+        return {"success": False, "error": ErrorMessages.MISSING_TOOL_NAME}
+    import json as _json
+    if tool_name.startswith("{") and tool_name.endswith("}"):
+        try:
+            parsed = _json.loads(tool_name)
+            if isinstance(parsed, dict) and "name" in parsed:
+                inner_name = parsed.get("name")
+                inner_args = parsed.get("arguments") or parsed.get("args") or {}
+                if isinstance(inner_name, str) and inner_name:
+                    tool_name = inner_name
+                    arguments = inner_args
+        except Exception:
+            pass  
+
+    if arguments is None:
+        arguments = {}
+    elif isinstance(arguments, str):
+        try:
+            arguments = _json.loads(arguments)
+        except Exception:
+            return {"success": False, "error": "arguments must be a JSON object"}
+    if not isinstance(arguments, dict):
+        return {"success": False, "error": "arguments must be an object"}
+
+    registry = get_tool_registry()
+    try:
+        result = registry.execute_tool(tool_name, arguments)
+    except ValueError as e:
+        api_logger.warning(f"execute_tool: {tool_name} not available for {user}: {e}")
+        return {"success": False, "error": f"Unknown tool: {tool_name}", "error_code": ErrorCodes.INVALID_PARAMS}
+    except PermissionError as e:
+        api_logger.warning(f"execute_tool: {tool_name} permission denied for {user}: {e}")
+        return {
+            "success": False,
+            "error": "Access denied",
+            "error_code": ErrorCodes.AUTHENTICATION_REQUIRED,
+        }
+    except frappe.ValidationError as e:
+        api_logger.error(f"execute_tool: {tool_name} validation error: {e}")
+        return {"success": False, "error": str(e), "error_code": ErrorCodes.VALIDATION_ERROR}
+    except Exception as e:
+        api_logger.error(f"execute_tool: {tool_name} failed for {user}: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "error_code": ErrorCodes.INTERNAL_ERROR,
+        }
+    try:
+        import json as _json
+        _json.dumps(result, default=str)
+    except Exception:
+        pass
+
+    return {"success": True, "tool": tool_name, "result": result}
