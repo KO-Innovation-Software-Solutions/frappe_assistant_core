@@ -57,7 +57,7 @@ dependencies = [
     "python-magic>=0.4.27",
     "beautifulsoup4~=4.12.2",  # Compatible with frappe ~=4.12.2 requirement
     # AIKO Chatbot dependencies
-    "mcp>=1.1.2",
+    "mcp>=1.1.2,<2.0.0",
     "langchain-core>=0.1.0",
     "langchain-anthropic>=0.1.0",
     "langchain-openai>=0.1.0",
