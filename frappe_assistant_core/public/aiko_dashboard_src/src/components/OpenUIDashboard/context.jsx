@@ -364,6 +364,24 @@ export function DashboardProvider({ children }) {
   }, [makeCanonicalKey, normaliseToolResultForFrontend, unwrapCallToolShape]);
 
 
+  const applyRefreshResult = useCallback((msg) => {
+    if (!msg?.success) return false;
+    if (Array.isArray(msg.queries) && msg.queryMap) {
+      for (const q of msg.queries) {
+        const canonicalKey = makeCanonicalKey(q.tool, q.args || {});
+        const backendVal = msg.queryMap[q.key];
+        if (backendVal === undefined) continue;
+        queryMapRef.current[canonicalKey] = normaliseToolResultForFrontend(q.tool, backendVal);
+        q._canonical_key = canonicalKey;
+      }
+      queriesMetaRef.current = msg.queries;
+    }
+    if (msg.refreshed_at) setLastRefreshAt(msg.refreshed_at);
+    setRefreshTick((n) => n + 1);
+    return true;
+  }, [makeCanonicalKey, normaliseToolResultForFrontend]);
+
+
   const refresh = useCallback(() => {
     if (isStreaming) return;
     setStage("Refreshing data…");
@@ -372,26 +390,7 @@ export function DashboardProvider({ children }) {
       args: { thread_id: threadId.current, legacy_fallback: false },
       callback: (r) => {
         const msg = r.message;
-        if (msg?.success) {
-          if (Array.isArray(msg.queries) && msg.queryMap && typeof msg.queryMap === "object") {
-            for (const q of msg.queries) {
-              const canonicalKey = makeCanonicalKey(q.tool, q.args || {});
-              const backendVal = (msg.queryMap || {})[q.key];
-              if (backendVal === undefined) continue;
-              const normalised = normaliseToolResultForFrontend(q.tool, backendVal);
-              queryMapRef.current[canonicalKey] = normalised;
-              q._canonical_key = canonicalKey;
-            }
-          } else if (msg.queryMap && typeof msg.queryMap === "object") {
-            queryMapRef.current = { ...queryMapRef.current, ...msg.queryMap };
-          }
-          if (Array.isArray(msg.queries)) {
-            queriesMetaRef.current = msg.queries;
-          }
-          if (msg.refreshed_at) {
-            setLastRefreshAt(msg.refreshed_at);
-          }
-          setRefreshTick((n) => n + 1);
+        if (applyRefreshResult(msg)) {
           setStage("");
         } else {
           setStage("");
@@ -431,7 +430,7 @@ export function DashboardProvider({ children }) {
         } catch {}
       },
     });
-  }, [isStreaming]);
+  }, [isStreaming, applyRefreshResult]);
 
   const toolProvider = useMemo(() => ({
   callTool: async (toolName, args) => {
@@ -542,6 +541,7 @@ export function DashboardProvider({ children }) {
         send,
         clear,
         refresh,
+        applyRefreshResult,
         canRefresh: dashboardCode !== null && !isStreaming,
         currentThreadId,
         loadSession,
