@@ -9,11 +9,36 @@
   {
    "child": 0,
    "collapsible": 1,
+   "icon": "home",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "HOME",
+   "link_to": "AIKO",
+   "link_type": "Workspace",
+   "show_arrow": 0,
+   "type": "Link",
+   "url": "/app"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
    "icon": "dashboard",
    "indent": 0,
    "keep_closed": 0,
    "label": "AIKO Dashboard",
-   "link_to": "aiko-dashboard",
+   "link_type": "URL",
+   "show_arrow": 0,
+   "type": "Link",
+   "url": "/aiko_dashboard"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "list",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Dashboard Artifacts",
+   "link_to": "aiko-dashboard-artifact-view",
    "link_type": "Page",
    "show_arrow": 0,
    "type": "Link"
@@ -90,7 +115,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-07-24 15:25:26.409967",
+ "modified": "2026-07-31 07:47:43.384077",
  "modified_by": "Administrator",
  "module": "Assistant Core",
  "name": "AIKO",

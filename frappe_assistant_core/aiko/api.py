@@ -729,7 +729,7 @@ def extract_unique_queries(dsl_src: str):
     import re as _re
     import ast as _py_ast
     pattern = _re.compile(
-        r'Query\(\s*[\"\']([A-Za-z_][A-Za-z0-9_]*)[\"\']\s*,\s*(\{.*?\})\s*\)',
+        r'Query\(\s*[\"\']([A-Za-z_][A-Za-z0-9_]*)[\"\']\s*,\s*(\{.*?\})\s*(?:,\s*\[.*?\])?\s*\)',
         _re.DOTALL,
     )
     for m in pattern.finditer(dsl_src):
@@ -1057,7 +1057,138 @@ def refresh_dashboard_queries(thread_id: str, legacy_fallback: bool = True):
         "failed": failed,
     }
 
+def _get_first_user_message(session_name: str) -> str | None:
+    msgs = frappe.db.get_list(
+        "Aiko Dashboard Message",
+        filters={"session": session_name, "role": "user"},
+        fields=["content"],
+        order_by="creation asc",
+        limit=1,
+    )
+    if msgs and msgs[0].get("content"):
+        text = msgs[0]["content"].strip()
+        return text[:120] + "…" if len(text) > 120 else text
+    return None
 
+
+def _title_from_session(thread_id: str, user: str) -> str:
+    session_name = frappe.db.get_value(
+        "Aiko Dashboard Session",
+        {"thread_id": thread_id, "user": user},
+        "name",
+    )
+    if session_name:
+        first_msg = _get_first_user_message(session_name)
+        if first_msg:
+            return first_msg
+    return f"Dashboard {thread_id[:8]}"
+
+
+@frappe.whitelist(methods=["POST"])
+def save_dashboard_artifact(thread_id: str, title: str = None):
+    if not frappe.session.user or frappe.session.user == "Guest":
+        frappe.throw(_("Authentication required"))
+
+    session_name = frappe.db.get_value(
+        "Aiko Dashboard Session",
+        {"thread_id": thread_id, "user": frappe.session.user},
+        "name",
+    )
+    if not session_name:
+        frappe.throw(_("No dashboard session found"))
+
+    last_msg = frappe.db.get_list(
+        "Aiko Dashboard Message",
+        filters={"session": session_name, "role": "assistant"},
+        fields=["ui", "tool_calls_snapshot", "data_manifest"],
+        order_by="creation desc",
+        limit=1,
+    )
+    if not last_msg or not last_msg[0].get("ui"):
+        frappe.throw(_("Nothing to save yet"))
+
+    row = last_msg[0]
+    doc = frappe.get_doc({
+        "doctype": "Aiko Dashboard Artifact",
+        "title": title or _title_from_session(thread_id, frappe.session.user),
+        "ui": row["ui"],
+        "tool_calls_snapshot": row["tool_calls_snapshot"],
+        "data_manifest": row["data_manifest"],
+        "source_thread_id": thread_id,
+        "last_refreshed_at": now_datetime(),
+    })
+    doc.insert(ignore_permissions=True)
+    frappe.db.commit()
+    return {"success": True, "name": doc.name}
+
+
+@frappe.whitelist()
+def refresh_dashboard_artifact(artifact_name: str):
+    if not frappe.session.user or frappe.session.user == "Guest":
+        frappe.throw(_("Authentication required"))
+
+    artifact = frappe.get_doc("Aiko Dashboard Artifact", artifact_name)
+    if artifact.owner != frappe.session.user and "System Manager" not in frappe.get_roles():
+        frappe.throw(_("Not permitted"))
+
+    ui = artifact.ui
+    refreshed_at = now_datetime().isoformat()
+
+    queries = extract_unique_queries(ui)
+    registry = get_tool_registry()
+    query_map, failed = {}, []
+
+    for q in queries:
+        if not q["tool"] or q["uses_bindings"]:
+            continue
+        try:
+            raw = registry.execute_tool(q["tool"], q["args"] or {})
+            result_for_map, _ = _normalise_tool_result_for_querymap(q["tool"], raw)
+            try:
+                json.dumps(result_for_map, default=str)
+                query_map[q["key"]] = result_for_map
+            except Exception:
+                query_map[q["key"]] = json.loads(json.dumps(result_for_map, default=str))
+        except Exception as e:
+            failed.append({"key": q["key"], "tool": q["tool"], "error": str(e)})
+
+    frappe.db.set_value("Aiko Dashboard Artifact", artifact_name,
+                         "last_refreshed_at", refreshed_at, update_modified=False)
+
+    return {
+        "success": True,
+        "queryMap": query_map,
+        "queries": queries,
+        "refreshed_at": refreshed_at,
+        "failed": failed,
+    }
+
+
+@frappe.whitelist()
+def list_dashboard_artifacts():
+    if not frappe.session.user or frappe.session.user == "Guest":
+        frappe.throw(_("Authentication required"))
+    return frappe.db.get_list(
+        "Aiko Dashboard Artifact",
+        filters={"owner": frappe.session.user},
+        fields=["name", "title", "last_refreshed_at", "creation"],
+        order_by="creation desc",
+    )
+
+
+@frappe.whitelist()
+def get_dashboard_artifact(artifact_name: str):
+    if not frappe.session.user or frappe.session.user == "Guest":
+        frappe.throw(_("Authentication required"))
+    doc = frappe.get_doc("Aiko Dashboard Artifact", artifact_name)
+    if doc.owner != frappe.session.user and "System Manager" not in frappe.get_roles():
+        frappe.throw(_("Not permitted"))
+    return {
+        "name": doc.name,
+        "title": doc.title,
+        "ui": doc.ui,
+        "last_refreshed_at": doc.last_refreshed_at,
+    }
 def run_chat_job_sync(message: str, thread_id: str, user: str, request_id: str):
     """Sync entry point for Frappe's background worker."""
     asyncio.run(run_chat_job(message, thread_id, user, request_id))

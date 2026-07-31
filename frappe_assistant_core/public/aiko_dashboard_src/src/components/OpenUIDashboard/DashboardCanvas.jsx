@@ -64,7 +64,7 @@ function DropdownItem({ onClick, children, color }) {
 }
 
 export function DashboardCanvas({ library }) {
-  const {
+ const {
     dashboardCode, isStreaming, elapsed, refresh, canRefresh,
     showExportMenu, setShowExportMenu,
     showMailMenu, setShowMailMenu,
@@ -76,9 +76,12 @@ export function DashboardCanvas({ library }) {
     queryResolver: externalQueryResolver,
     toolProvider,
     refreshTick,
+    currentThreadId,
   } = useDashboard();
   const [showSource, setShowSource] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState("");
   const dashboardRef = useRef(null);
   const queryResolverRef = useRef(externalQueryResolver);
   useEffect(() => {
@@ -199,6 +202,32 @@ export function DashboardCanvas({ library }) {
       setIsExporting(false);
     }
   }, [closeAllDropdowns, captureDashboard]);
+  const handleSaveArtifact = useCallback(async () => {
+  if (!dashboardCode || isSaving) return;
+  setIsSaving(true);
+  setSaveStatus("");
+
+  frappe.call({
+    method: "frappe_assistant_core.aiko.api.save_dashboard_artifact",
+    args: {
+      thread_id: currentThreadId,
+    },
+    callback: (r) => {
+      setIsSaving(false);
+      if (r.message?.success) {
+        setSaveStatus("Saved ✓");
+      } else {
+        setSaveStatus("Save failed");
+      }
+      setTimeout(() => setSaveStatus(""), 2500);
+    },
+    error: () => {
+      setIsSaving(false);
+      setSaveStatus("Save failed");
+      setTimeout(() => setSaveStatus(""), 2500);
+    },
+  });
+}, [dashboardCode, isSaving, currentThreadId]);
 
   const handleSendMail = useCallback(async () => {
     if (!mailTo.trim()) return;
@@ -379,7 +408,14 @@ onMouseEnter={(e) => { e.currentTarget.style.background = "#F6F5F9"; }}
             >
               {showSource ? "Hide code" : "View code"}
             </button>
-
+            <button onClick={handleSaveArtifact} disabled={!dashboardCode || isSaving} style={{
+              background: dashboardCode ? "#1F2621" : "#E5E7EB",
+              border: "none", borderRadius: 4, cursor: dashboardCode ? "pointer" : "not-allowed",
+              color: "white", fontSize: 11, padding: "5px 10px", fontWeight: 700, fontFamily: "Inter, sans-serif",
+            }}>
+              {isSaving ? "Saving…" : saveStatus || "💾 Save"}
+            </button>
+            
             <button onClick={refresh} disabled={!canRefresh} style={{
               background: canRefresh ? "#7C3AED" : "#E5E7EB",
               border: "none", borderRadius: 4, cursor: canRefresh ? "pointer" : "not-allowed",

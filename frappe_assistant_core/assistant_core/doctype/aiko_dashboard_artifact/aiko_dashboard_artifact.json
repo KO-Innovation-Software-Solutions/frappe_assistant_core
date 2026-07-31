@@ -1,0 +1,91 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "hash",
+ "creation": "2026-07-29 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "source_thread_id",
+  "last_refreshed_at",
+  "ui",
+  "tool_calls_snapshot",
+  "data_manifest"
+ ],
+ "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "reqd": 1
+  },
+  {
+   "fieldname": "source_thread_id",
+   "fieldtype": "Data",
+   "label": "Source Thread ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_refreshed_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Last Refreshed At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ui",
+   "fieldtype": "Long Text",
+   "label": "UI (DSL)"
+  },
+  {
+   "fieldname": "tool_calls_snapshot",
+   "fieldtype": "Long Text",
+   "label": "Tool Calls Snapshot"
+  },
+  {
+   "fieldname": "data_manifest",
+   "fieldtype": "Long Text",
+   "label": "Data Manifest"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-07-29 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Assistant Core",
+ "name": "Aiko Dashboard Artifact",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "if_owner": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

@@ -1,0 +1,54 @@
+{% extends "templates/web.html" %}
+
+{% block title %}AIKO Dashboard{% endblock %}
+
+{% block head %}
+<style>
+    .navbar, .web-footer, footer.web-footer, nav.navbar,
+    .page-header, .container.page-header, .web-sidebar {
+        display: none !important;
+    }
+    html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        height: 100% !important;
+        overflow: hidden !important;
+    }
+    .page_content, .container, .page-content-wrapper, main {
+        padding: 0 !important;
+        margin: 0 !important;
+        max-width: none !important;
+        width: 100% !important;
+    }
+    #aiko-dashboard-web-root {
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
+    }
+</style>
+{% endblock %}
+
+{% block page_content %}
+<div id="aiko-dashboard-web-root"></div>
+{% endblock %}
+
+{% block script %}
+<script>
+    frappe.ready(function () {
+        const el = document.getElementById('aiko-dashboard-web-root');
+        if (window.AikoDashboard && window.AikoDashboard.mount) {
+            window.AikoDashboard.mount(el);
+        } else {
+            const script = document.createElement('script');
+            script.src = '/assets/frappe_assistant_core/dist/aiko_dashboard/index.js';
+            script.onload = function () {
+                window.AikoDashboard.mount(el);
+            };
+            script.onerror = function () {
+                el.innerHTML = '<div style="padding:2rem;color:#888;">Aiko Dashboard bundle not found — run the frontend build first.</div>';
+            };
+            document.head.appendChild(script);
+        }
+    });
+</script>
+{% endblock %}
