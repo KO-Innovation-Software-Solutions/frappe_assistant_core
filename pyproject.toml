@@ -1,7 +1,7 @@
 [build-system]
 requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
-
+ 
 [project]
 name = "frappe_assistant_core"
 version = "2.4.3"
@@ -56,14 +56,16 @@ dependencies = [
     "pymupdf>=1.24.0",  # PDF page rendering for Ollama vision OCR
     "python-magic>=0.4.27",
     "beautifulsoup4~=4.12.2",  # Compatible with frappe ~=4.12.2 requirement
+    "pytesseract>=0.3.10",
     # AIKO Chatbot dependencies
-    "mcp>=1.1.2",
+    "mcp>=1.1.2,<2.0.0",
     "langchain-core>=0.1.0",
     "langchain-anthropic>=0.1.0",
     "langchain-openai>=0.1.0",
     "langchain-ollama>=0.1.0",
+ 
 ]
-
+ 
 [project.optional-dependencies]
 dev = [
     "pytest>=6.0",
@@ -72,10 +74,6 @@ dev = [
     "flake8>=3.9",
     "mypy>=0.910",
 ]
-ocr = [
-    "paddleocr>=2.9.0",
-    "paddlepaddle>=2.6.0,<3.1.0",  # 3.3.0 has oneDNN/PIR bug on CPU
-]
 # Optional PDF table extraction (has security vulnerability in transitive dep pdfminer.six)
 # Only install if you need PDF table extraction feature
 pdf-tables = [
@@ -83,19 +81,19 @@ pdf-tables = [
 ]
 # All other dependencies have been moved to main dependencies
 # to ensure they are installed automatically on all servers
-
+ 
 [project.urls]
 Homepage = "https://github.com/buildswithpaul/Frappe_Assistant_Core"
 Documentation = "https://github.com/buildswithpaul/Frappe_Assistant_Core/wiki"
 Repository = "https://github.com/buildswithpaul/Frappe_Assistant_Core.git"
 "Bug Tracker" = "https://github.com/buildswithpaul/Frappe_Assistant_Core/issues"
-
+ 
 [tool.setuptools]
 include-package-data = true
-
+ 
 [tool.setuptools.packages.find]
 include = ["frappe_assistant_core*"]
-
+ 
 [tool.setuptools.package-data]
 frappe_assistant_core = [
     "templates/*.html",
@@ -103,7 +101,7 @@ frappe_assistant_core = [
     "*.json",
     "**/*.json",
 ]
-
+ 
 [tool.black]
 line-length = 88
 target-version = ['py38', 'py39', 'py310', 'py311']
@@ -122,12 +120,12 @@ exclude = '''
   | dist
 )/
 '''
-
+ 
 [tool.isort]
 profile = "black"
 multi_line_output = 3
 line_length = 88
-
+ 
 [tool.mypy]
 python_version = "3.10"
 warn_return_any = true
@@ -135,14 +133,14 @@ warn_unused_configs = true
 disallow_untyped_defs = false
 ignore_missing_imports = true
 check_untyped_defs = true
-
+ 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "--cov=frappe_assistant_core --cov-report=html --cov-report=term-missing"
-
+ 
 [tool.ruff]
 line-length = 110
 target-version = "py38"
@@ -158,7 +156,7 @@ exclude = [
     "dist",
     "*.egg-info",
 ]
-
+ 
 [tool.ruff.lint]
 select = [
     "F",  # pyflakes
@@ -176,9 +174,9 @@ ignore = [
     "F401",  # imported but unused
     "F841",  # local variable assigned but never used
 ]
-
+ 
 [tool.ruff.lint.per-file-ignores]
 "frappe_assistant_core/plugins/base_plugin.py" = ["B027"]
-
+ 
 [tool.bench.frappe-dependencies]
 frappe = ">=15.0.0,<17.0.0"
