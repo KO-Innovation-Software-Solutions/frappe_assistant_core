@@ -134,6 +134,10 @@ class DocumentList(BaseTool):
                     filtered_fields = ["name"]  # Always allow name field
                 fields = filtered_fields
 
+            error = self.validate_fields(doctype, fields)
+            if error:
+                return error
+
             # Get documents with proper permission checking
             documents = frappe.get_all(
                 doctype,

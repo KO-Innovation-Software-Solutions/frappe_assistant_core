@@ -49,6 +49,10 @@
   "ollama_chat_column_break",
   "ollama_chat_api_url",
   "ollama_chat_model",
+  "voice_section",
+  "enable_voice_output",
+  "voice_column_break",
+  "enable_voice_input",
   "mcp_configuration_tab",
   "mcp_section",
   "mcp_server_name",
@@ -338,6 +342,29 @@
    "fieldtype": "Data",
    "label": "Ollama Chat Model"
   },
+  {
+    "fieldname": "voice_section",
+    "fieldtype": "Section Break",
+    "label": "Voice Features (AIKO Chat)"
+    },
+    {
+    "fieldname": "enable_voice_output",
+    "fieldtype": "Check",
+    "label": "Enable Voice Output (Listen / TTS)",
+    "default": "1",
+    "description": "Globally enable or disable the Listen (text-to-speech) button in AIKO chat for all users."
+    },
+    {
+    "fieldname": "voice_column_break",
+    "fieldtype": "Column Break"
+    },
+    {
+    "fieldname": "enable_voice_input",
+    "fieldtype": "Check",
+    "label": "Enable Voice Input (Mic / STT)",
+    "default": "1",
+    "description": "Globally enable or disable the microphone (speech-to-text) button in AIKO chat for all users."
+    },
   {
    "fieldname": "mcp_configuration_tab",
    "fieldtype": "Tab Break",

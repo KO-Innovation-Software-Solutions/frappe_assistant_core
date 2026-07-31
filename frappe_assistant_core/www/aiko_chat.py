@@ -1,5 +1,4 @@
 import frappe
-import os
 
 def get_context(context):
     if frappe.session.user == "Guest":
@@ -14,11 +13,3 @@ def get_context(context):
     context.no_cache = 1
     context.title = "AIKO Assistant"
     context.user = frappe.session.user
-
-    # ✅ ADD THIS BLOCK
-    js_path = os.path.join(
-        os.path.dirname(__file__),  # www/ folder
-        "aiko_chat.js"
-    )
-    with open(js_path, "r") as f:
-        context.script = f.read()

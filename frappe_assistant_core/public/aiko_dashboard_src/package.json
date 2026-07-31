@@ -1,0 +1,30 @@
+{
+  "name": "aiko-dashboard",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && vite build --config vite.artifact_view.config.js",
+    "build:dashboard": "vite build",
+    "build:artifact": "vite build --config vite.artifact_view.config.js",
+    "generate-prompt": "openui generate ./src/library.js --json-schema --out src/generated/component-spec.json"
+  },
+  "dependencies": {
+    "@openuidev/react-lang": "latest",
+    "@openuidev/react-ui": "latest",
+    "html2canvas-pro": "^1.5.0",
+    "jspdf": "^2.5.2",
+    "lucide-react": "^0.460.0",
+    "polyfill-crypto-methods": "^1.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "xlsx": "^0.18.5",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@openuidev/cli": "latest",
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.4.0"
+  }
+}

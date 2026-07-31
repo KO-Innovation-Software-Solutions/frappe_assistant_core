@@ -1,0 +1,613 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root {
+  /* ── Brand core (Kofleetz purple) ── */
+  --ink: #211B2E;
+  --paper: #F6F3FB;
+  --paper-dim: #ECE6F7;
+  --purple: #5B2C8D;
+  --purple-soft: #7C4DB8;
+  --purple-tint: #A480D1;
+  --lilac: #C9AEE8;
+  --amber: #D99A3D;
+  --rust: #B54A3F;
+  --line: #DDD2EE;
+  --white: #FFFFFF;
+
+  /* legacy aliases kept so nothing else in this file needs renaming */
+  --green: var(--purple);
+  --green-soft: var(--purple-soft);
+  --sage: var(--lilac);
+
+  --openui-background: var(--paper);
+  --openui-foreground: var(--white);
+  --openui-popover-background: var(--white);
+  --openui-sunk: var(--paper-dim);
+  --openui-sunk-light: var(--paper);
+  --openui-border-default: var(--line);
+  --openui-border-interactive: var(--line);
+  --openui-border-interactive-emphasis: var(--purple-soft);
+  --openui-text-neutral-primary: var(--ink);
+  --openui-text-neutral-secondary: var(--purple-soft);
+  --openui-radius-s: 6px;
+  --openui-radius-m: 8px;
+  --openui-radius-l: 10px;
+  --openui-radius-xl: 10px;
+  --openui-radius-2xl: 10px;
+  --openui-radius-3xl: 10px;
+
+  --openui-font-body: "Inter", sans-serif;
+  --openui-font-heading: "Fraunces", serif;
+  --openui-font-label: "Inter", sans-serif;
+  --openui-font-numbers: "IBM Plex Mono", monospace;
+
+  --openui-text-body-xs: 400 12px/1.5 var(--openui-font-body);
+  --openui-text-body-xs-heavy: 500 12px/1.5 var(--openui-font-body);
+  --openui-text-body-sm: 400 14px/1.5 var(--openui-font-body);
+  --openui-text-body-sm-heavy: 500 14px/1.5 var(--openui-font-body);
+  --openui-text-body-default: 400 16px/1.5 var(--openui-font-body);
+  --openui-text-body-default-heavy: 500 16px/1.5 var(--openui-font-body);
+  --openui-text-body-lg: 400 18px/1.5 var(--openui-font-body);
+  --openui-text-body-lg-heavy: 500 18px/1.5 var(--openui-font-body);
+
+  --openui-text-heading-xs: 600 16px/1.25 var(--openui-font-heading);
+  --openui-text-heading-sm: 600 18px/1.25 var(--openui-font-heading);
+  --openui-text-heading-md: 600 24px/1.1 var(--openui-font-heading);
+  --openui-text-heading-lg: 600 28px/1.1 var(--openui-font-heading);
+  --openui-text-heading-xl: 700 32px/1.1 var(--openui-font-heading);
+
+  --openui-text-label-xs: 400 12px/1.25 var(--openui-font-label);
+  --openui-text-label-xs-heavy: 500 12px/1.25 var(--openui-font-label);
+  --openui-text-label-sm: 400 14px/1.25 var(--openui-font-label);
+  --openui-text-label-sm-heavy: 500 14px/1.25 var(--openui-font-label);
+  --openui-text-label-default: 400 16px/1.25 var(--openui-font-label);
+  --openui-text-label-default-heavy: 500 16px/1.25 var(--openui-font-label);
+  --openui-text-label-lg: 400 18px/1.25 var(--openui-font-label);
+  --openui-text-label-lg-heavy: 500 18px/1.25 var(--openui-font-label);
+
+  --openui-text-numbers-xs: 400 12px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-xs-heavy: 500 12px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-sm: 400 14px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-sm-heavy: 500 14px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-default: 400 16px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-default-heavy: 500 16px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-lg: 400 18px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-lg-heavy: 500 18px/1.5 var(--openui-font-numbers);
+  --openui-text-numbers-heading-sm: 600 18px/1.25 var(--openui-font-numbers);
+  --openui-text-numbers-heading-md: 600 24px/1.1 var(--openui-font-numbers);
+  --openui-text-numbers-heading-lg: 600 28px/1.1 var(--openui-font-numbers);
+  --openui-text-numbers-heading-xl: 600 32px/1.1 var(--openui-font-numbers);
+
+  /* variant tokens used by @openuidev/react-ui Callout & Tag components */
+  --openui-success-background: rgba(91, 44, 141, 0.10);
+  --openui-text-success-primary: var(--purple);
+  --openui-border-success-emphasis: var(--purple);
+
+  --openui-info-background: rgba(76, 110, 245, 0.10);
+  --openui-text-info-primary: #4C6EF5;
+  --openui-border-info-emphasis: #4C6EF5;
+
+  --openui-alert-background: rgba(217, 154, 61, 0.14);
+  --openui-text-alert-primary: var(--amber);
+  --openui-border-alert-emphasis: var(--amber);
+
+  --openui-danger-background: rgba(181, 74, 63, 0.10);
+  --openui-text-danger-primary: var(--rust);
+  --openui-border-danger-emphasis: var(--rust);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--openui-font-body);
+  background: var(--paper);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@keyframes openui-loading-bar {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.openui-card-card:nth-child(1)  { animation: fadeSlideUp 0.45s ease both; }
+.openui-card-card:nth-child(2)  { animation: fadeSlideUp 0.45s ease 0.06s both; }
+.openui-card-card:nth-child(3)  { animation: fadeSlideUp 0.45s ease 0.12s both; }
+.openui-card-card:nth-child(4)  { animation: fadeSlideUp 0.45s ease 0.18s both; }
+.openui-card-card:nth-child(5)  { animation: fadeSlideUp 0.45s ease 0.24s both; }
+.openui-card-card:nth-child(6)  { animation: fadeSlideUp 0.45s ease 0.30s both; }
+.openui-card-card:nth-child(7)  { animation: fadeSlideUp 0.45s ease 0.36s both; }
+.openui-card-card:nth-child(8)  { animation: fadeSlideUp 0.45s ease 0.42s both; }
+.openui-card-card:nth-child(9)  { animation: fadeSlideUp 0.45s ease 0.48s both; }
+.openui-card-card:nth-child(10) { animation: fadeSlideUp 0.45s ease 0.54s both; }
+
+/* ── Card overrides ── */
+.openui-card-card {
+  background: var(--white) !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 10px !important;
+  padding: 24px !important;
+  box-shadow: 0 1px 2px rgba(91,44,141,0.04), 0 8px 24px rgba(91,44,141,0.05) !important;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease, border-color 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.openui-card-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--purple), var(--purple-soft) 60%, var(--lilac));
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.openui-card-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 16px 36px rgba(91,44,141,0.14);
+  border-color: var(--purple-tint) !important;
+}
+
+.openui-card-card:hover::before {
+  opacity: 1;
+}
+
+.openui-card-sunk {
+  background: var(--paper-dim) !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 10px !important;
+  padding: 24px !important;
+  box-shadow: none !important;
+}
+
+/* ── Masthead styling ── */
+.openui-card-sunk:has(.openui-header):not(:has(.openui-text-callout)) {
+  background: linear-gradient(135deg, #F1EAFB 0%, #EFE7FA 100%) !important;
+  color: var(--ink) !important;
+  border: 1px solid var(--line) !important;
+  border-left: 5px solid var(--purple) !important;
+  padding: 30px 34px !important;
+  border-radius: 10px !important;
+  margin-bottom: 24px !important;
+  box-shadow: 0 6px 20px rgba(91,44,141,0.08) !important;
+  position: relative;
+}
+
+.openui-card-sunk:has(.openui-header):not(:has(.openui-text-callout)) .openui-header {
+  border-bottom: none !important;
+  padding-bottom: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+.openui-card-sunk:has(.openui-header):not(:has(.openui-text-callout)) .openui-header-top-left {
+  color: var(--ink) !important;
+  font-size: 1.85rem !important;
+  font-weight: 700 !important;
+  font-family: var(--openui-font-heading) !important;
+  letter-spacing: -0.01em;
+}
+
+.openui-card-sunk:has(.openui-header):not(:has(.openui-text-callout)) .openui-header-bottom {
+  color: var(--purple-soft) !important;
+  font-size: 0.95rem !important;
+  margin-top: 6px !important;
+  font-weight: 500;
+}
+
+/* ── Section headers (h2 style) ── */
+.openui-header {
+  border-bottom: 2px solid var(--purple) !important;
+  padding-bottom: 8px !important;
+  margin-bottom: 16px !important;
+  position: relative;
+}
+
+.openui-header-top-left {
+  font-family: var(--openui-font-heading) !important;
+  font-size: 1.35rem !important;
+  font-weight: 600 !important;
+  color: var(--ink) !important;
+}
+
+.openui-header-bottom {
+  font-family: var(--openui-font-body) !important;
+  font-size: 0.85rem !important;
+  color: var(--purple-soft) !important;
+  margin-top: 4px !important;
+}
+
+/* ── Table overrides ── */
+.openui-table-container {
+  border: 1px solid var(--line) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 1px 2px rgba(91,44,141,0.03) !important;
+  background-color: var(--white) !important;
+  overflow: hidden;
+}
+
+.openui-table-head {
+  background: linear-gradient(180deg, #F3EEFB, #ECE5F8) !important;
+  border-bottom: 2px solid var(--line) !important;
+}
+
+.openui-table-head .openui-table-head-label {
+  font-family: var(--openui-font-label) !important;
+  color: var(--purple-soft) !important;
+  font-weight: 700 !important;
+  font-size: 11px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.06em !important;
+}
+
+.openui-table-row {
+  border-bottom: 1px solid var(--paper-dim) !important;
+  transition: background-color 0.15s ease !important;
+}
+
+.openui-table-row:nth-child(even) {
+  background-color: #FAF8FD !important;
+}
+
+.openui-table-row:hover {
+  background-color: var(--paper) !important;
+}
+
+.openui-table-cell {
+  font-family: var(--openui-font-body) !important;
+  font-size: 13px !important;
+  color: var(--ink) !important;
+  padding: 11px 14px !important;
+}
+
+.openui-table-cell:has([style*="font-variant-numeric: tabular-nums"]),
+.openui-table-align-right {
+  font-family: var(--openui-font-numbers) !important;
+}
+
+/* ── Receipt Strip KPI styling ── */
+.sap-receipt-strip {
+  background: var(--white);
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  position: relative;
+  padding: 24px 12px;
+  margin-top: 8px;
+  margin-bottom: 28px;
+  box-shadow: 0 4px 20px rgba(91, 44, 141, 0.06);
+}
+
+.sap-receipt-strip::before,
+.sap-receipt-strip::after {
+  content: '';
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  height: 8px;
+  background-size: 16px 8px;
+  background-repeat: repeat-x;
+}
+
+.sap-receipt-strip::before {
+  top: -8px;
+  background-image: radial-gradient(circle at 8px -4px, transparent 8px, var(--white) 8px);
+  border-bottom: 1px solid var(--line);
+}
+
+.sap-receipt-strip::after {
+  bottom: -8px;
+  background-image: radial-gradient(circle at 8px 12px, transparent 8px, var(--white) 8px);
+  border-top: 1px solid var(--line);
+}
+
+.sap-receipt-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.sap-receipt-line {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 16px 20px !important;
+  border-radius: 8px !important;
+  border: 1px solid var(--line) !important;
+  box-shadow: 0 1px 3px rgba(91,44,141,0.03) !important;
+  transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+}
+
+.sap-receipt-line:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 16px rgba(91,44,141,0.10) !important;
+}
+
+/* KPI accent rotation — purple family with warm/cool support colors for contrast */
+.sap-receipt-line:nth-child(1) {
+  background-color: #F3EEFB !important;
+  border-left: 4px solid #5B2C8D !important;
+}
+.sap-receipt-line:nth-child(1) .openui-card-card > div:nth-child(1),
+.sap-receipt-line:nth-child(1) .openui-card-card > div:nth-child(1) * {
+  color: #5B2C8D !important;
+}
+
+.sap-receipt-line:nth-child(2) {
+  background-color: #EFEAFA !important;
+  border-left: 4px solid #7C4DB8 !important;
+}
+.sap-receipt-line:nth-child(2) .openui-card-card > div:nth-child(1),
+.sap-receipt-line:nth-child(2) .openui-card-card > div:nth-child(1) * {
+  color: #6D3FA6 !important;
+}
+
+.sap-receipt-line:nth-child(3) {
+  background-color: #FBF6EC !important;
+  border-left: 4px solid #D99A3D !important;
+}
+.sap-receipt-line:nth-child(3) .openui-card-card > div:nth-child(1),
+.sap-receipt-line:nth-child(3) .openui-card-card > div:nth-child(1) * {
+  color: #B3741B !important;
+}
+
+.sap-receipt-line:nth-child(4) {
+  background-color: #EEF1FB !important;
+  border-left: 4px solid #4C6EF5 !important;
+}
+.sap-receipt-line:nth-child(4) .openui-card-card > div:nth-child(1),
+.sap-receipt-line:nth-child(4) .openui-card-card > div:nth-child(1) * {
+  color: #3A56D4 !important;
+}
+
+.sap-receipt-line:nth-child(5) {
+  background-color: #F9F4F4 !important;
+  border-left: 4px solid #B54A3F !important;
+}
+.sap-receipt-line:nth-child(5) .openui-card-card > div:nth-child(1),
+.sap-receipt-line:nth-child(5) .openui-card-card > div:nth-child(1) * {
+  color: #B54A3F !important;
+}
+
+.sap-receipt-line .openui-card-card {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  width: 100% !important;
+}
+
+.sap-receipt-line .openui-card-card > div:nth-child(1),
+.sap-receipt-line .openui-card-card > div:nth-child(1) * {
+  font-family: var(--openui-font-label) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+}
+
+.sap-receipt-line .openui-card-card > div:nth-child(2),
+.sap-receipt-line .openui-card-card > div:nth-child(2) * {
+  font-family: var(--openui-font-numbers) !important;
+  font-size: 27px !important;
+  font-weight: 600 !important;
+  color: var(--ink) !important;
+  margin: 4px 0 !important;
+}
+
+.sap-receipt-line .openui-card-card > div:nth-child(3),
+.sap-receipt-line .openui-card-card > div:nth-child(3) * {
+  font-family: var(--openui-font-body) !important;
+  font-size: 11px !important;
+  color: #6C757D !important;
+}
+
+/* ── Callout overrides ── */
+.openui-text-callout {
+  background: var(--white) !important;
+  border-radius: 8px !important;
+  padding: 14px 18px !important;
+  border: 1px solid var(--line) !important;
+  box-shadow: 0 1px 3px rgba(91,44,141,0.03) !important;
+}
+
+.openui-text-callout-success { border-left: 4px solid var(--purple) !important; }
+.openui-text-callout-warning { border-left: 4px solid var(--amber) !important; }
+.openui-text-callout-info { border-left: 4px solid var(--purple-soft) !important; }
+.openui-text-callout-neutral { border-left: 4px solid var(--ink) !important; }
+
+.openui-text-callout-content-title {
+  color: var(--ink) !important;
+  font-size: 0.95rem !important;
+  font-family: var(--openui-font-heading) !important;
+  font-weight: 600 !important;
+}
+
+.openui-text-callout-content-description {
+  color: #5c5665 !important;
+  font-size: 0.85rem !important;
+}
+
+/* ── Button overrides ── */
+.openui-button {
+  font-family: var(--openui-font-label);
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 6px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.openui-button-primary {
+  background: linear-gradient(135deg, var(--purple), var(--purple-soft));
+  color: var(--white);
+  border: none;
+  box-shadow: 0 2px 8px rgba(91,44,141,0.25);
+}
+
+.openui-button-primary:hover {
+  background: var(--purple-soft);
+  box-shadow: 0 4px 14px rgba(91,44,141,0.35);
+}
+
+/* ── Chart palette ── */
+[data-chart-palette] {
+  --chart-1: #5B2C8D;
+  --chart-2: #7C4DB8;
+  --chart-3: #A480D1;
+  --chart-4: #D99A3D;
+  --chart-5: #4C6EF5;
+  --chart-6: #B54A3F;
+  --chart-7: #8A8478;
+}
+
+.dashboard-input::placeholder {
+  color: #6B6178;
+  opacity: 0.8;
+}
+
+.recharts-bar-rectangle:hover path,
+.recharts-bar-rectangle:hover rect,
+.recharts-pie-sector:hover,
+.recharts-sector:hover {
+  filter: brightness(1.1);
+  transition: filter 0.15s ease;
+}
+
+/* Markdown content inside conversation bubbles */
+.openui-markdown-renderer, .openui-markdown-renderer * {
+  font-family: "Inter", sans-serif;
+}
+.openui-markdown-renderer p { margin: 0 0 8px 0; line-height: 1.55; }
+.openui-markdown-renderer p:last-child { margin-bottom: 0; }
+.openui-markdown-renderer strong { color: #1F2621; font-weight: 700; }
+.openui-markdown-renderer ul, .openui-markdown-renderer ol {
+  margin: 4px 0 8px 18px; padding: 0;
+}
+.openui-markdown-renderer li { margin-bottom: 3px; line-height: 1.5; }
+.openui-markdown-renderer code {
+  background: #F5F3FF; color: #6D28D9; padding: 1px 5px;
+  border-radius: 3px; font-family: "IBM Plex Mono", monospace; font-size: 12px;
+}
+.openui-markdown-renderer table {
+  width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 12.5px;
+}
+.openui-markdown-renderer th {
+  background: #F5F3FF; padding: 6px 8px; text-align: left;
+  font-weight: 600; border-bottom: 2px solid #DDD6FE; color: #5B21B6;
+}
+.openui-markdown-renderer td {
+  padding: 6px 8px; border-bottom: 1px solid #EDE9FE;
+}
+.openui-markdown-renderer h1, .openui-markdown-renderer h2, .openui-markdown-renderer h3 {
+  font-family: "Fraunces", Georgia, serif; margin: 10px 0 6px 0; color: #1F2621;
+}
+.openui-markdown-renderer blockquote {
+  border-left: 3px solid #A78BFA; margin: 6px 0; padding: 2px 12px;
+  color: #5B5650; font-style: italic;
+}
+/* ══════════════════════════════════════════════
+   ADD-ON REFINEMENTS — append to the end of styles.css
+   ══════════════════════════════════════════════ */
+
+/* 1. KPI cards — depth, hierarchy, color anchor */
+.sap-receipt-line {
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08) !important;
+  padding: 16px 20px 14px !important; /* tighter bottom */
+}
+
+.sap-receipt-line .openui-card-card > div:nth-child(2),
+.sap-receipt-line .openui-card-card > div:nth-child(2) * {
+  font-size: 2.2rem !important;
+  font-weight: 700 !important;
+  line-height: 1.1 !important;
+}
+
+.sap-receipt-line .openui-card-card > div:nth-child(1),
+.sap-receipt-line .openui-card-card > div:nth-child(1) * ,
+.sap-receipt-line .openui-card-card > div:nth-child(3),
+.sap-receipt-line .openui-card-card > div:nth-child(3) * {
+  color: #6b7280 !important; /* dim label + caption so the number pops */
+}
+/* re-apply accent color only to the first (label) line, kept subtle not loud */
+.sap-receipt-line .openui-card-card > div:nth-child(1),
+.sap-receipt-line .openui-card-card > div:nth-child(1) * {
+  color: #8a8496 !important;
+}
+
+/* 2. Chart gridlines — lighten so they don't compete with the line */
+.recharts-cartesian-grid line {
+  stroke: #f0f0f0 !important;
+}
+
+/* 3. Header banner — tighter, softer */
+.openui-card-sunk:has(.openui-header):not(:has(.openui-text-callout)) {
+  background: linear-gradient(135deg, #f5f3ff, #ede9fe) !important;
+  padding: 22px 30px !important; /* was 30px 34px — less vertical real estate */
+}
+
+/* 4. Section header underline — either make it a full divider or remove.
+   Below: extends it full width as a proper divider instead of a stray clipped line. */
+.openui-header {
+  border-bottom: 1px solid #e5e7eb !important;
+  width: 100%;
+}
+.openui-header-bottom {
+  border-bottom: none !important; /* kill the old stray underline on the subtitle itself */
+  padding-bottom: 0 !important;
+}
+
+/* 5. Consistent spacing rhythm */
+.openui-card-card,
+.openui-card-sunk {
+  border-radius: 8px !important; /* unify with buttons below */
+}
+.sap-receipt-grid,
+.openui-stack-row,
+.openui-stack-column {
+  gap: 20px !important; /* one consistent value everywhere */
+}
+
+/* 7. Export fix: freeze animations/hover-transforms while html2canvas
+   captures the dashboard — mid-transition opacity/transform states are
+   what produced the ghosted/duplicated look in exported PNG/PDF. */
+/* Safe to disable everywhere: kills entrance animations + hover
+   transitions without touching layout. */
+.exporting-freeze,
+.exporting-freeze * {
+  animation: none !important;
+  transition: none !important;
+}
+
+/* Only reset `transform` on the specific decorative elements that use it
+   for hover-lift/entrance effects. Do NOT do this on every descendant —
+   chart libraries (recharts) use inline `transform` on internal SVG
+   groups (axis ticks, bar/line positioning) for actual layout, and a
+   blanket reset silently breaks that: it's what was making Y-axis
+   vehicle-plate labels disappear and bar widths render wrong in exports. */
+.exporting-freeze.openui-card-card,
+.exporting-freeze .openui-card-card,
+.exporting-freeze .sap-receipt-line {
+  transform: none !important;
+}
+
+/* 8. Hide interactive-only controls (legend scroll arrows, "Show more",
+   any button) during export capture — they can't function in a flattened
+   PNG/PDF and just look like dead UI, so we remove them from the snapshot
+   only; the live dashboard is untouched since this class is added/removed
+   right around the html2canvas capture window. */
+.exporting-freeze button,
+.exporting-freeze .openui-stacked-legend-show-more-button {
+  display: none !important;
+}

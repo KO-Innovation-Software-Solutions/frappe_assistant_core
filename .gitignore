@@ -73,3 +73,4 @@ debug_*.py
 build/
 client_packages/*/build/
 
+package-lock.json

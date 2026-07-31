@@ -181,6 +181,16 @@ class AssistantCoreSettings(Document):
         except Exception as e:
             frappe.log_error(title=frappe._("Tool Cache Refresh Error"), message=str(e))
 
+        if self.has_value_changed("enable_voice_output") or self.has_value_changed("enable_voice_input"):
+            frappe.publish_realtime(
+                "aiko_voice_settings_updated",
+                {
+                    "enable_voice_output": bool(self.enable_voice_output),
+                    "enable_voice_input": bool(self.enable_voice_input),
+                },
+                after_commit=True,
+            )
+
     @frappe.whitelist()
     def get_plugin_status(self):
         """Get plugin status with a simplified view that links to FAC Admin for full control"""
@@ -332,7 +342,14 @@ class AssistantCoreSettings(Document):
 
 # SSE Bridge API endpoints removed - SSE transport is deprecated
 # Use StreamableHTTP (OAuth-based) transport instead
-
+@frappe.whitelist(allow_guest=True)
+def get_voice_settings():
+    """Expose global voice feature flags to the AIKO chat frontend."""
+    settings = frappe.get_cached_doc("Assistant Core Settings")
+    return {
+        "enable_voice_output": bool(settings.get("enable_voice_output", 1)),
+        "enable_voice_input": bool(settings.get("enable_voice_input", 1)),
+    }
 
 def toggle_plugin_api(plugin_name: str, action: str):
     """
