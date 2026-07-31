@@ -1057,6 +1057,33 @@ def refresh_dashboard_queries(thread_id: str, legacy_fallback: bool = True):
         "failed": failed,
     }
 
+def _get_first_user_message(session_name: str) -> str | None:
+    msgs = frappe.db.get_list(
+        "Aiko Dashboard Message",
+        filters={"session": session_name, "role": "user"},
+        fields=["content"],
+        order_by="creation asc",
+        limit=1,
+    )
+    if msgs and msgs[0].get("content"):
+        text = msgs[0]["content"].strip()
+        return text[:120] + "…" if len(text) > 120 else text
+    return None
+
+
+def _title_from_session(thread_id: str, user: str) -> str:
+    session_name = frappe.db.get_value(
+        "Aiko Dashboard Session",
+        {"thread_id": thread_id, "user": user},
+        "name",
+    )
+    if session_name:
+        first_msg = _get_first_user_message(session_name)
+        if first_msg:
+            return first_msg
+    return f"Dashboard {thread_id[:8]}"
+
+
 @frappe.whitelist(methods=["POST"])
 def save_dashboard_artifact(thread_id: str, title: str = None):
     if not frappe.session.user or frappe.session.user == "Guest":
@@ -1083,7 +1110,7 @@ def save_dashboard_artifact(thread_id: str, title: str = None):
     row = last_msg[0]
     doc = frappe.get_doc({
         "doctype": "Aiko Dashboard Artifact",
-        "title": title or f"Dashboard {now_datetime().strftime('%Y-%m-%d %H:%M')}",
+        "title": title or _title_from_session(thread_id, frappe.session.user),
         "ui": row["ui"],
         "tool_calls_snapshot": row["tool_calls_snapshot"],
         "data_manifest": row["data_manifest"],
