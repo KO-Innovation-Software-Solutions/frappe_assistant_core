@@ -104,7 +104,7 @@ function splitContent(text) {
   if (!text) return { parts: [{ type: 'text', content: '' }], followups: [] }
   const parts = []
   let followups = []
-  const fenceRe = /```(\w+)?\s*([\s\S]*?)```/g
+  const fenceRe = /(`{3,})(\w+)?\s*([\s\S]*?)\1/g
   let lastIndex = 0
   let match
 
@@ -112,12 +112,12 @@ function splitContent(text) {
     const before = text.slice(lastIndex, match.index)
     if (before.trim()) parts.push({ type: 'text', content: before })
 
-    const lang = (match[1] || '').toLowerCase()
+    const lang = (match[2] || '').toLowerCase()
     let handled = false
 
     if (lang === 'followups') {
       try {
-        const parsed = JSON.parse(match[2])
+        const parsed = JSON.parse(match[3])
         if (Array.isArray(parsed)) {
           followups = parsed.filter((q) => typeof q === 'string' && q.trim()).slice(0, 3)
           handled = true
@@ -125,9 +125,12 @@ function splitContent(text) {
       } catch {}
     } else {
       try {
-        const parsed = JSON.parse(match[2])
+        const parsed = JSON.parse(match[3])
         if (parsed && parsed.type && parsed.data && parsed.xKey && parsed.yKey) {
           parts.push({ type: 'chart', content: parsed })
+          handled = true
+        } else if (Array.isArray(parsed) && parsed.length && parsed.every((q) => typeof q === 'string' && q.trim())) {
+          followups = parsed.filter((q) => typeof q === 'string' && q.trim()).slice(0, 3)
           handled = true
         }
       } catch {}

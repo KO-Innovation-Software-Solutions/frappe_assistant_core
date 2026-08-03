@@ -88,7 +88,7 @@ def _get_active_llm_info(settings=None):
 def _get_or_create_session(thread_id: str, user: str):
     existing_name = frappe.db.get_value("Aiko Chat Session", {"thread_id": thread_id}, "name")
     if existing_name:
-        return frappe.get_doc("Aiko Chat Session", existing_name)
+        return frappe.get_doc("Aiko Chat Session", existing_name, for_update=False, ignore_permissions=True)
 
     session = frappe.get_doc({
         "doctype": "Aiko Chat Session",
@@ -103,7 +103,7 @@ def _get_or_create_session(thread_id: str, user: str):
         frappe.db.rollback()
         existing_name = frappe.db.get_value("Aiko Chat Session", {"thread_id": thread_id}, "name")
         if existing_name:
-            return frappe.get_doc("Aiko Chat Session", existing_name)
+            return frappe.get_doc("Aiko Chat Session", existing_name, for_update=False, ignore_permissions=True)
         raise
     return session
 
@@ -286,7 +286,7 @@ async def run_chat_job(message: str, thread_id: str, user: str, request_id: str)
 def _get_or_create_dashboard_session(thread_id: str, user: str):
     existing_name = frappe.db.get_value("Aiko Dashboard Session", {"thread_id": thread_id}, "name")
     if existing_name:
-        return frappe.get_doc("Aiko Dashboard Session", existing_name)
+        return frappe.get_doc("Aiko Dashboard Session", existing_name, for_update=False, ignore_permissions=True)
 
     session = frappe.get_doc({
         "doctype": "Aiko Dashboard Session",
@@ -301,7 +301,7 @@ def _get_or_create_dashboard_session(thread_id: str, user: str):
         frappe.db.rollback()
         existing_name = frappe.db.get_value("Aiko Dashboard Session", {"thread_id": thread_id}, "name")
         if existing_name:
-            return frappe.get_doc("Aiko Dashboard Session", existing_name)
+            return frappe.get_doc("Aiko Dashboard Session", existing_name, for_update=False, ignore_permissions=True)
         raise
     return session
 
@@ -504,11 +504,15 @@ def dashboard_chat(message: str, thread_id: str, request_id: str = None):
         )
         if job and getattr(job, "id", None):
             frappe.cache().set_value(_job_key(request_id), job.id, expires_in_sec=3600)
+        frappe.publish_realtime(
+            event="aiko_dashboard_started",
+            message={"thread_id": thread_id, "request_id": request_id, "message": message},
+            user=frappe.session.user,
+        )
     except Exception:
         frappe.log_error(title="AIKO Dashboard Enqueue Error", message=frappe.get_traceback())
         return {"success": False, "error": "Could not start the request. Please try again."}
     return {"success": True, "queued": True, "thread_id": thread_id, "request_id": request_id}
-
 @frappe.whitelist()
 def refresh_dashboard(thread_id: str):
     if not frappe.session.user or frappe.session.user == "Guest":
