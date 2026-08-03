@@ -93,7 +93,7 @@ export function HistoryPanel({ onClose }) {
               onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
             >
               <div style={{ fontSize: 13, fontWeight: 600, color: THEME.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {s.name}
+                {s.preview || s.name}
                 {pendingThreads[s.thread_id] && (
                   <span style={{
                     fontSize: 10, fontWeight: 700, color: "#D99A3D",
@@ -101,14 +101,6 @@ export function HistoryPanel({ onClose }) {
                   }}>● generating</span>
                 )}
               </div>
-              {s.preview && (
-                <div style={{
-                  fontSize: 12, color: "#5B5650", marginTop: 3,
-                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                }}>
-                  {s.preview}
-                </div>
-              )}
               <div style={{ fontSize: 11, color: "#8A8478", marginTop: 2, display: "flex", gap: 6 }}>
                 <span>{formatRelative(s.last_active || s.creation)}</span>
                 <span>·</span>

@@ -624,6 +624,25 @@ export function ArtifactView({ artifactName: initialArtifactName }) {
   const [artifacts, setArtifacts] = useState([]);
   const [listLoading, setListLoading] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const rootRef = useRef(null);
+  const [rootHeight, setRootHeight] = useState(null);
+
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const recompute = () => {
+      const top = el.getBoundingClientRect().top;
+      setRootHeight(Math.max(200, window.innerHeight - top));
+    };
+    recompute();
+    window.addEventListener("resize", recompute);
+    const ro = new ResizeObserver(recompute);
+    ro.observe(document.body);
+    return () => {
+      window.removeEventListener("resize", recompute);
+      ro.disconnect();
+    };
+  }, []);
 
   const updateUrl = useCallback((name) => {
     const newPath = `/app/aiko-dashboard-artifact-view/${name}`;
@@ -671,7 +690,14 @@ export function ArtifactView({ artifactName: initialArtifactName }) {
   }, []);
 
   return (
-  <div style={{ display: "flex", height: "100%", alignItems: "flex-start" }}>
+  <div
+      ref={rootRef}
+      style={{
+        display: "flex",
+        alignItems: "stretch",
+        height: rootHeight != null ? `${rootHeight}px` : "100vh",
+      }}
+    >
       <ArtifactSidebar
         artifacts={artifacts}
         loading={listLoading}

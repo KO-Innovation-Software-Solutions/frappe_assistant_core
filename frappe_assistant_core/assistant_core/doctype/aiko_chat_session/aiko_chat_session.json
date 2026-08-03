@@ -102,18 +102,12 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
-   "share": 1,
-   "write": 1
-  },
-  {
-   "create": 1,
-   "read": 1,
-   "role": "Assistant User",
-   "write": 1
-  }
- ],
- "row_format": "Dynamic",
- "sort_field": "last_active",
+    "share": 1,
+    "write": 1
+   }
+  ],
+  "row_format": "Dynamic",
+  "sort_field": "last_active",
  "sort_order": "DESC",
  "states": []
 }
