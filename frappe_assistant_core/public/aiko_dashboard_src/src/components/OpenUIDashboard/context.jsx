@@ -124,6 +124,49 @@ export function DashboardProvider({ children }) {
   const threadId = useRef(currentThreadId);
   const abortRef = useRef(null);
   const lastPromptRef = useRef(null);
+  // Mirror of pendingThreads kept in a ref so guards/handlers can read the
+  // current value synchronously (React state is stale within the same tick,
+  // which allowed a fast double-click to enqueue two jobs for one thread).
+  const pendingThreadsRef = useRef({});
+
+  const updatePendingThreads = useCallback((updater) => {
+    // Update the ref synchronously so guards read the fresh value even
+    // within the same tick (React's state updater only runs at render time).
+    const next = updater(pendingThreadsRef.current);
+    pendingThreadsRef.current = next;
+    setPendingThreads(next);
+  }, []);
+
+  // Pre-fills queryMapRef/queriesMetaRef from a session's saved
+  // tool_calls_snapshot so Query(tool, args, []) bindings in a loaded
+  // dashboard resolve from cache instead of every switch re-firing every
+  // tool call live. Purely additive to the cache — never clears it, so it
+  // can't clobber data from whatever thread you were just looking at.
+  const hydrateQueryCache = useCallback((messages) => {
+    if (!Array.isArray(messages)) return;
+    for (const m of messages) {
+      if (m.role !== "assistant" || !m.tool_calls_snapshot) continue;
+      let calls;
+      try {
+        calls = JSON.parse(m.tool_calls_snapshot);
+      } catch {
+        continue;
+      }
+      if (!Array.isArray(calls)) continue;
+      for (const c of calls) {
+        const toolName = c?.name;
+        const args = c?.args || {};
+        if (!toolName) continue;
+        const key = makeCanonicalKey(toolName, args);
+        if (queryMapRef.current[key] !== undefined) continue; // don't clobber a live/refreshed value
+        queryMapRef.current[key] = normaliseToolResultForFrontend(toolName, c?.result);
+        if (!queriesMetaRef.current.some((q) => q.tool === toolName && JSON.stringify(q.args || {}) === JSON.stringify(args))) {
+          queriesMetaRef.current.push({ key, tool: toolName, args, statement_id: null });
+        }
+      }
+    }
+  }, [makeCanonicalKey, normaliseToolResultForFrontend]);
+
   useEffect(() => {
     frappe.call({
       method: "frappe_assistant_core.aiko.api.get_dashboard_session_messages",
@@ -140,8 +183,10 @@ export function DashboardProvider({ children }) {
           }
           return { role: "user", content: m.content, hasCode: false };
         });
+        hydrateQueryCache(data.messages);
         setConversation(rebuilt);
         setDashboardCode(latestUi ? normalizeDsl(latestUi) : null);
+        setRefreshTick((n) => n + 1);
       },
       error: () => {
       },
@@ -157,10 +202,7 @@ export function DashboardProvider({ children }) {
 
   useEffect(() => {
     const stageHandler = (data) => {
-      setPendingThreads((prev) => {
-        if (!prev[data.thread_id] || prev[data.thread_id] !== data.request_id) return prev;
-        return prev;
-      });
+      if (pendingThreadsRef.current[data.thread_id] !== data.request_id) return;
       if (data.thread_id === threadId.current) {
         setStage(data.stage);
         if (data.tool_calls) setToolCalls(data.tool_calls);
@@ -169,8 +211,8 @@ export function DashboardProvider({ children }) {
     };
 
     const doneHandler = (data) => {
-      setPendingThreads((prev) => {
-        if (prev[data.thread_id] !== data.request_id) return prev;
+      if (pendingThreadsRef.current[data.thread_id] !== data.request_id) return;
+      updatePendingThreads((prev) => {
         const next = { ...prev };
         delete next[data.thread_id];
         return next;
@@ -234,7 +276,7 @@ export function DashboardProvider({ children }) {
   const send = useCallback(
     (text) => {
       if (!text.trim()) return;
-      if (pendingThreads[threadId.current]) return;
+      if (pendingThreadsRef.current[threadId.current]) return;
       const trimmed = text.trim();
 
       setStreamingText("");
@@ -251,14 +293,14 @@ export function DashboardProvider({ children }) {
       const requestId = frappe.utils.get_random(10);
       const thisThread = threadId.current;
 
-      setPendingThreads((prev) => ({ ...prev, [thisThread]: requestId }));
+      updatePendingThreads((prev) => ({ ...prev, [thisThread]: requestId }));
 
       frappe.call({
         method: "frappe_assistant_core.aiko.api.dashboard_chat",
         args: { message: trimmed, thread_id: thisThread, request_id: requestId },
         callback: (r) => {
           if (!r.message || !r.message.success) {
-            setPendingThreads((prev) => {
+            updatePendingThreads((prev) => {
               const next = { ...prev };
               delete next[thisThread];
               return next;
@@ -272,7 +314,7 @@ export function DashboardProvider({ children }) {
           }
         },
         error: () => {
-          setPendingThreads((prev) => {
+          updatePendingThreads((prev) => {
             const next = { ...prev };
             delete next[thisThread];
             return next;
@@ -286,8 +328,43 @@ export function DashboardProvider({ children }) {
         },
       });
     },
-    [pendingThreads],
+    [updatePendingThreads],
   );
+  // Stops generation for a given thread (defaults to the currently active
+  // one). Fires cancel_chat (already used by the chat surface's stop
+  // button) with that thread's in-flight request_id, then optimistically
+  // clears pendingThreads for it so the UI doesn't wait on a realtime event
+  // that a cancelled backend job may be slow to publish.
+  const stopGeneration = useCallback((targetThreadId) => {
+    const tId = targetThreadId || threadId.current;
+    const requestId = pendingThreadsRef.current[tId];
+    if (!requestId) return;
+    frappe.call({
+      method: "frappe_assistant_core.aiko.api.cancel_chat",
+      args: { request_id: requestId },
+    });
+    // Optimistically drop the tracked request so the UI resets immediately.
+    // cancel_chat also hard-kills the RQ job, so a done event may never
+    // arrive; and if one does, doneHandler ignores it because the
+    // request_id no longer matches. A stale/second job for this thread is
+    // ignored by the request_id filter in stageHandler/doneHandler.
+    updatePendingThreads((prev) => {
+      const next = { ...prev };
+      delete next[tId];
+      return next;
+    });
+    if (tId === threadId.current) {
+      setStage("");
+      setStartTime(null);
+      setElapsed(null);
+      setToolCalls([]);
+      setConversation((prev) => [
+        ...prev,
+        { role: "assistant", content: "Stopped.", text: "Stopped.", hasCode: false },
+      ]);
+    }
+  }, [updatePendingThreads]);
+
   const unwrapCallToolShape = useCallback((call) => {
     if (
       call && typeof call === "object" &&
@@ -493,8 +570,10 @@ export function DashboardProvider({ children }) {
           }
           return { role: "user", content: m.content, hasCode: false };
         });
+        hydrateQueryCache(data.messages || []);
         setConversation(rebuilt);
         setDashboardCode(latestUi ? normalizeDsl(latestUi) : null);
+        setRefreshTick((n) => n + 1);
         lastPromptRef.current = null;
       },
       error: () => {
@@ -504,7 +583,7 @@ export function DashboardProvider({ children }) {
         }]);
       },
     });
-  }, [pendingThreads]);
+  }, [pendingThreads, hydrateQueryCache]);
 
   const startNewSession = useCallback(() => {
     const newId = frappe.utils.get_random(12);
@@ -539,6 +618,7 @@ export function DashboardProvider({ children }) {
         stage,
         toolCalls,
         send,
+        stopGeneration,
         clear,
         refresh,
         applyRefreshResult,

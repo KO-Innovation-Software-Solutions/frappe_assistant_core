@@ -118,7 +118,7 @@ function StreamingIndicator({ elapsed, stage, toolCalls }) {
 export function ConversationPanel() {
   const {
     conversation, isStreaming, streamingText, streamingHasCode,
-    elapsed, dashboardCode, send, stage, toolCalls,
+    elapsed, dashboardCode, send, stage, toolCalls, stopGeneration,
   } = useDashboard();
   const [input, setInput] = useState("");
   const inputRef = useRef(null);
@@ -209,20 +209,34 @@ export function ConversationPanel() {
               e.currentTarget.style.boxShadow = "none";
             }}
           />
-          <button
-            onClick={handleSend}
-            disabled={!canSend}
-            style={{
-              padding: "8px 16px", border: "none", borderRadius: 3,
-              background: canSend ? THEME.accent : "#E5E7EB",
-              color: canSend ? THEME.white : "#8A8478",
-              cursor: canSend ? "pointer" : "not-allowed",
-              fontSize: 13, fontWeight: 600, fontFamily: "Inter, sans-serif",
-              transition: "background 0.15s",
-            }}
-            onMouseEnter={(e) => { if (canSend) e.currentTarget.style.background = THEME.accentHover; }}
-            onMouseLeave={(e) => { if (canSend) e.currentTarget.style.background = THEME.accent; }}
-          >{isStreaming ? "..." : "Send"}</button>
+          {isStreaming ? (
+            <button
+              onClick={() => stopGeneration()}
+              style={{
+                padding: "8px 16px", border: `1px solid ${THEME.rust}`, borderRadius: 3,
+                background: THEME.white, color: THEME.rust, cursor: "pointer",
+                fontSize: 13, fontWeight: 600, fontFamily: "Inter, sans-serif",
+                transition: "background 0.15s, color 0.15s",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = THEME.rust; e.currentTarget.style.color = THEME.white; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = THEME.white; e.currentTarget.style.color = THEME.rust; }}
+            >■ Stop</button>
+          ) : (
+            <button
+              onClick={handleSend}
+              disabled={!canSend}
+              style={{
+                padding: "8px 16px", border: "none", borderRadius: 3,
+                background: canSend ? THEME.accent : "#E5E7EB",
+                color: canSend ? THEME.white : "#8A8478",
+                cursor: canSend ? "pointer" : "not-allowed",
+                fontSize: 13, fontWeight: 600, fontFamily: "Inter, sans-serif",
+                transition: "background 0.15s",
+              }}
+              onMouseEnter={(e) => { if (canSend) e.currentTarget.style.background = THEME.accentHover; }}
+              onMouseLeave={(e) => { if (canSend) e.currentTarget.style.background = THEME.accent; }}
+            >Send</button>
+          )}
         </div>
       </div>
     </div>
