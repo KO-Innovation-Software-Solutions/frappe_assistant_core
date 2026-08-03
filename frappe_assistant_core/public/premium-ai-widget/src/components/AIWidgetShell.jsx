@@ -63,6 +63,11 @@ export default function AIWidgetShell() {
   const [isUploading, setIsUploading] = useState(false)
   const [messageCount, setMessageCount] = useState(0)
   const [closing, setClosing] = useState(false)
+  const [reasoningEffort, setReasoningEffort] = useState('auto')
+  const [frozen, setFrozen] = useState(false)
+  const [frozenReason, setFrozenReason] = useState('')
+  const [connectionError, setConnectionError] = useState(false)
+  const [tokenUsage, setTokenUsage] = useState(null)
 
   const [sidebarSearch, setSidebarSearch] = useState('')
   const threadIdRef = useRef(frappe.utils.get_random(10))
@@ -130,13 +135,30 @@ export default function AIWidgetShell() {
     })
   }
 
+  const fetchTokenUsage = () => {
+    frappe.call({
+      method: 'frappe_assistant_core.aiko.api.get_token_usage',
+      callback: (r) => {
+        if (r.message) {
+          setTokenUsage(r.message)
+          setFrozen(!!r.message.frozen)
+          setFrozenReason(r.message.frozen ? 'Token limit exceeded. Please contact your administrator.' : '')
+        }
+      },
+    })
+  }
+
   useEffect(() => { loadSessions() }, [])
+
+  useEffect(() => { fetchTokenUsage() }, [])
 
   useEffect(() => {
     const onDone = (data) => {
       if (data.thread_id !== threadIdRef.current) return
       if (abortedRequestsRef.current.has(data.request_id)) { abortedRequestsRef.current.delete(data.request_id); return }
       if (currentRequestIdRef.current && data.request_id !== currentRequestIdRef.current) return
+
+      if (data.token_usage) setTokenUsage(data.token_usage)
 
       setMessages((prev) => {
         const withoutThinking = prev.filter((m) => m.id !== thinkingMsgIdRef.current)
@@ -216,6 +238,8 @@ export default function AIWidgetShell() {
     setSessionsOpen(false)
     setSuggestions(pickRandom(SUGGESTIONS, 4))
     setMessageCount(0)
+    setConnectionError(false)
+    fetchTokenUsage() // re-check the real frozen status instead of assuming it's cleared
   }
 
   const handleLoadSession = (sessionName, threadId) => {
@@ -274,17 +298,25 @@ export default function AIWidgetShell() {
 
     frappe.call({
       method: 'frappe_assistant_core.aiko.api.chat',
-      args: { message: outgoingText, thread_id: threadIdRef.current, request_id: requestId },
+      args: { message: outgoingText, thread_id: threadIdRef.current, request_id: requestId, reasoning_effort: reasoningEffort },
       callback: (r) => {
         if (!r.message || !r.message.success) {
           setMessages((prev) => prev.filter((m) => m.id !== thinkingMessage.id).concat({ id: uid(), role: 'ai', text: 'Could not start the request. Please try again.', failed: true, retryText: trimmed, time: Date.now() }))
           isThinkingRef.current = false
+          if (r.message && r.message.frozen) {
+            setMessages((prev) => prev.filter((m) => m.id !== thinkingMessage.id))
+            setFrozen(true)
+            setFrozenReason(r.message.reason || 'Token limit exceeded. Please contact your administrator.')
+          } else {
+            setMessages((prev) => prev.filter((m) => m.id !== thinkingMessage.id).concat({ id: uid(), role: 'ai', text: 'Could not start the request. Please try again.', failed: true, retryText: trimmed, time: Date.now() }))
+          }
           setIsThinking(false)
         }
       },
       error: () => {
         setMessages((prev) => prev.filter((m) => m.id !== thinkingMessage.id).concat({ id: uid(), role: 'ai', text: 'Network error or server unavailable.', failed: true, retryText: trimmed, time: Date.now() }))
         isThinkingRef.current = false
+        setConnectionError(true)
         setIsThinking(false)
       }
     })
@@ -368,6 +400,12 @@ export default function AIWidgetShell() {
                   >
                     <div className="truncate text-sm font-medium text-slate-900">{shortName(firstMessages[s.name] || s.preview)}</div>
                     <div className="text-[11px] text-slate-400">{formatDayTime(s.preview_time || s.last_active)}</div>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-semibold text-slate-900">{shortName(firstMessages[s.name] || s.preview)}</div>
+                      </div>
+                      <span className="shrink-0 whitespace-nowrap pt-0.5 text-[11px] text-slate-400">{formatDayTime(s.preview_time || s.last_active)}</span>
+                    </div>
                   </button>
                 ))}
               {sessions && filteredSessions.length > visibleSessionCount && (
@@ -406,6 +444,9 @@ export default function AIWidgetShell() {
               input={input} setInput={setInput} onSend={handleSend} onStop={handleStop} isThinking={isThinking}
               onAttach={handleAttach} attachedFile={attachedFile} isUploading={isUploading} onRemoveAttachment={removeAttachment}
               limitReached={messageCount >= 10} onNewChat={handleNewChat}
+              reasoningEffort={reasoningEffort} onReasoningEffortChange={setReasoningEffort}
+              frozen={frozen} frozenReason={frozenReason} connectionError={connectionError}
+              tokenUsage={tokenUsage}
             />
           </div>
         </div>
@@ -437,6 +478,9 @@ export default function AIWidgetShell() {
               input={input} setInput={setInput} onSend={handleSend} onStop={handleStop} isThinking={isThinking}
               onAttach={handleAttach} attachedFile={attachedFile} isUploading={isUploading} onRemoveAttachment={removeAttachment}
               limitReached={messageCount >= 10} onNewChat={handleNewChat}
+              reasoningEffort={reasoningEffort} onReasoningEffortChange={setReasoningEffort}
+              frozen={frozen} frozenReason={frozenReason} connectionError={connectionError}
+              tokenUsage={tokenUsage}
         />
       </div>
     </section>

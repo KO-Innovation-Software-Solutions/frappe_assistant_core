@@ -1,4 +1,5 @@
 from typing import Optional
+import json
 import urllib.parse
 
 import frappe
@@ -9,6 +10,7 @@ from frappe.utils import get_url
 from .providers import OpenAIProvider, OllamaProvider
 
 MAX_HISTORY_MESSAGES = 20
+TOOLS_CACHE_TTL_SEC = 300  # 5 min — tool schemas rarely change turn to turn
 
 class AikoAgent:
     """Unified MCP Agent for Frappe"""
@@ -27,6 +29,8 @@ class AikoAgent:
         self.session: Optional[ClientSession] = None
         self._streams_context = None
         self._session_context = None
+        self._connected = False
+        self._tools_cache_key = f"aiko_mcp_tools:{frappe.session.user}"
 
         self.messages = [
             {
@@ -39,9 +43,11 @@ class AikoAgent:
                     "3. If tools return no results, tell the user — never fabricate or fill in placeholder values.\n"
                     "4. For greetings or small talk, respond only with: 'I am AIKO, an AI assistant for Kofleetz. Please ask me about your fleet operations.'\n"
                     "5. If you lack a tool to fulfill a request, clearly inform the user.\n"
-                    "6. Always summarize tool results clearly to the user.\n"
-                    "7. For chart-worthy data (comparisons, trends, distributions, rankings), add a fenced "
-                        "```chart block (not ```json) with JSON built from real data:\n"
+                    "6. Always summarize tool results clearly to the user — never dump raw tool output.\n"
+                    "7. When the user's request is well suited to a chart or graph (comparisons, trends, "
+                        "distributions, rankings), include a fenced code block that starts with exactly ```chart "
+                        "(not ```json or plain ```) containing valid JSON with this structure, built from the actual "
+                        "data you retrieved:\n"
                         '```chart\n'
                         '{"type": "<bar|line|pie>", "title": "<short title>", "xKey": "<label field>", "yKey": "<value field>", "data": [{"<xKey>": "<label>", "<yKey>": <number>}, ...]}\n'
                         '```\n'
@@ -118,8 +124,11 @@ class AikoAgent:
         self.session = await self._session_context.__aenter__()
 
         await self.session.initialize()
+        self._connected = True
 
     async def cleanup(self):
+        if not self._connected:
+            return  # never connected this turn — nothing to tear down
         try:
             if self._session_context:
                 await self._session_context.__aexit__(None, None, None)
@@ -130,13 +139,80 @@ class AikoAgent:
                 await self._streams_context.__aexit__(None, None, None)
         except Exception:
             pass
+        self._connected = False
 
-    async def _process_query(self, query: str, on_stage=None, is_cancelled=None, want_ui=False) -> dict:
+    async def _get_tools(self) -> list:
+        """
+        Returns the OpenAI-format tool schema. Serves from a per-user cache
+        whenever possible so a plain message never has to touch MCP at all.
+        """
+        cached = frappe.cache().get_value(self._tools_cache_key)
+        if cached:
+            try:
+                return json.loads(cached)
+            except Exception:
+                pass  # fall through and refetch on any cache corruption
+
         await self.connect_to_streamable_http_server()
         try:
+            response = await self.session.list_tools()
+            tools = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description or "",
+                        "parameters": t.inputSchema,
+                    },
+                }
+                for t in response.tools
+            ]
+        finally:
+            await self.cleanup()  # this one-off connect is done as soon as we have the schema
+
+        frappe.cache().set_value(
+            self._tools_cache_key, json.dumps(tools), expires_in_sec=TOOLS_CACHE_TTL_SEC
+        )
+        return tools
+
+    async def _call_tool(self, name: str, args: dict) -> str:
+        """
+        Lazily opens the MCP connection the first time a tool is actually
+        needed in this turn, and reuses it for any further tool calls in the
+        same query loop. Never opens a connection at all if no tool is called.
+
+        Self-healing: if the cached tool schema is stale (a tool was renamed/
+        removed server-side since the last cache refresh), this invalidates
+        the cache and retries once against the live tool list before giving up,
+        so a stale cache degrades gracefully instead of silently failing.
+        """
+        if not self._connected:
+            await self.connect_to_streamable_http_server()
+        try:
+            result = await self.session.call_tool(name, args)
+        except Exception as e:
+            err = str(e)
+            looks_stale = any(s in err.lower() for s in ("not found", "unknown tool", "no such tool", "invalid tool"))
+            if looks_stale:
+                frappe.cache().delete_value(self._tools_cache_key)
+                try:
+                    result = await self.session.call_tool(name, args)
+                except Exception as e2:
+                    return f"Error calling tool: {e2}"
+            else:
+                return f"Error calling tool: {e}"
+        if isinstance(result.content, list):
+            return "\n".join(str(item) for item in result.content)
+        return str(result.content)
+
+    async def _process_query(self, query: str, on_stage=None, is_cancelled=None, want_ui=False, reasoning_effort=None) -> dict:
+        tools = await self._get_tools()
+        try:
             result = await self.provider.process_query(
-                query, self.session, self.messages,
+                query, tools, self.messages,
                 on_stage=on_stage, is_cancelled=is_cancelled, want_ui=want_ui,
+                reasoning_effort=reasoning_effort, thread_id=self.thread_id,
+                call_tool=self._call_tool,
             )
             final_answer, updated_messages, usage, ui, tool_call_log, manifest = result
             if not final_answer:
@@ -152,7 +228,7 @@ class AikoAgent:
                 "manifest": manifest,
             }
         finally:
-            await self.cleanup()
+            await self.cleanup()  # no-op if no tool was ever called this turn
 
-    async def invoke(self, message: str, on_stage=None, is_cancelled=None, want_ui=False) -> dict:
-        return await self._process_query(message, on_stage=on_stage, is_cancelled=is_cancelled, want_ui=want_ui)
+    async def invoke(self, message: str, on_stage=None, is_cancelled=None, want_ui=False, reasoning_effort=None) -> dict:
+        return await self._process_query(message, on_stage=on_stage, is_cancelled=is_cancelled, want_ui=want_ui, reasoning_effort=reasoning_effort)

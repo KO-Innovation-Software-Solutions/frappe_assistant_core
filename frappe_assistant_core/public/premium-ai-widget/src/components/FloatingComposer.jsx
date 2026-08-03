@@ -18,14 +18,21 @@ function ToolButton({ label, children, onClick, active }) {
   )
 }
 
-export default function FloatingComposer({ input, setInput, onSend, onStop, isThinking, onAttach, attachedFile, isUploading, onRemoveAttachment, limitReached, onNewChat }) {
+const REASONING_OPTIONS = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'none', label: 'Fast' },
+  { value: 'high', label: 'Deep' },
+  { value: 'xhigh', label: 'Max' },
+]
+
+export default function FloatingComposer({ input, setInput, onSend, onStop, isThinking, onAttach, attachedFile, isUploading, onRemoveAttachment, limitReached, onNewChat, reasoningEffort, onReasoningEffortChange, frozen, frozenReason, connectionError, tokenUsage }) {
   const [isRecording, setIsRecording] = useState(false)
   const recognitionRef = useRef(null)
   const fileInputRef = useRef(null)
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    if (isThinking || limitReached) return
+    if (isThinking || limitReached || frozen || connectionError) return
     onSend(input)
   }
 
@@ -100,6 +107,16 @@ export default function FloatingComposer({ input, setInput, onSend, onStop, isTh
           )}
         </div>
       )}
+      {frozen && (
+        <div className="mb-2 flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+          <span>{frozenReason || 'Token limit exceeded. Please contact your administrator.'}</span>
+        </div>
+      )}
+      {connectionError && (
+        <div className="mb-2 flex items-center justify-between gap-3 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-700">
+          <span>Connection lost. Please check your network and try again.</span>
+        </div>
+      )}
       {limitReached && (
         <div className="mb-2 flex items-center justify-between gap-3 rounded-xl border border-brand-100 bg-brand-50 px-3 py-2 text-xs text-brand-700">
           <span>This chat has reached 10 messages. Start a new session to continue.</span>
@@ -110,11 +127,27 @@ export default function FloatingComposer({ input, setInput, onSend, onStop, isTh
         <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileChange} />
         <ToolButton label="Voice input" onClick={toggleMic} active={isRecording}><MicIcon /></ToolButton>
         <ToolButton label="Attachment" onClick={handleAttachClick}><AttachIcon /></ToolButton>
+        {!frozen && !connectionError && (
+          <select
+            value={reasoningEffort}
+            onChange={(e) => onReasoningEffortChange(e.target.value)}
+            className="h-7 rounded-md border border-slate-200 bg-white px-1.5 text-[10px] font-medium text-slate-600 focus:outline-none focus:ring-2 focus:ring-brand-400"
+          >
+            {REASONING_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        )}
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          disabled={limitReached}
-          placeholder={limitReached ? 'Message limit reached.' : 'Ask anything or drop a file...'}
+          disabled={limitReached || frozen || connectionError}
+          placeholder={
+            frozen ? 'Token limit exceeded.'
+            : connectionError ? 'Connection lost.'
+            : limitReached ? 'Message limit reached.'
+            : 'Ask anything or drop a file...'
+          }
           onKeyDown={(e) => {
             if (e.key === 'Enter' && isThinking) {
               e.preventDefault()
@@ -122,7 +155,7 @@ export default function FloatingComposer({ input, setInput, onSend, onStop, isTh
             }
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
-              if (!isThinking && !limitReached) onSend(input)
+              if (!isThinking && !limitReached && !frozen && !connectionError) onSend(input)
             }
           }}
           rows={1}
@@ -149,7 +182,7 @@ export default function FloatingComposer({ input, setInput, onSend, onStop, isTh
         ) : (
           <button
             type="submit"
-            disabled={limitReached}
+            disabled={limitReached || frozen || connectionError}
             aria-label="Send message"
             className="grid h-10 min-w-[40px] place-items-center rounded-full bg-gradient-to-r from-brand-600 to-fuchsia-500 px-3 text-white shadow-lg transition-all hover:scale-[1.03] focus-ring disabled:opacity-50"
           >
@@ -157,6 +190,24 @@ export default function FloatingComposer({ input, setInput, onSend, onStop, isTh
           </button>
         )}
       </form>
+      {tokenUsage && tokenUsage.enabled && (
+        <div className="mt-2 flex items-center gap-2 px-1">
+          <div className="flex-1 overflow-hidden rounded-full bg-slate-200 h-1.5">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${
+                tokenUsage.frozen ? 'bg-red-500' : tokenUsage.tokens_used / tokenUsage.tokens_limit > 0.8 ? 'bg-orange-500' : 'bg-brand-500'
+              }`}
+              style={{ width: `${Math.min((tokenUsage.tokens_used / tokenUsage.tokens_limit) * 100, 100)}%` }}
+            />
+          </div>
+          <span className="text-[10px] text-slate-400 whitespace-nowrap">
+            {(() => {
+              const pct = Math.min((tokenUsage.tokens_used / tokenUsage.tokens_limit) * 100, 100)
+              return pct > 0 && pct < 1 ? '<1' : pct.toFixed(pct < 10 ? 1 : 0)
+            })()}% used
+          </span>
+        </div>
+      )}
     </footer>
   )
 }

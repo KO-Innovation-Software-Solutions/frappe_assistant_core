@@ -104,22 +104,10 @@ class OllamaProvider:
             frappe.logger().error(f"_render_as_openui failed: {e}", exc_info=True)
             return None
 
-    async def process_query(self, query: str, session, messages: list, on_stage=None, is_cancelled=None, want_ui=False) -> tuple:
+    async def process_query(self, query: str, tools: list, messages: list, on_stage=None, is_cancelled=None, want_ui=False, reasoning_effort=None, thread_id=None, call_tool=None) -> tuple:
         def cancelled():
             return is_cancelled is not None and is_cancelled()
 
-        tools = []
-        if session:
-            response = await session.list_tools()
-            for tool in response.tools:
-                tools.append({
-                    "type": "function",
-                    "function": {
-                        "name": tool.name,
-                        "description": tool.description or "",
-                        "parameters": tool.inputSchema,
-                    },
-                })
         messages.append({"role": "user", "content": query})
         total_input_tokens = 0
         total_output_tokens = 0
@@ -204,14 +192,10 @@ class OllamaProvider:
                 except Exception:
                     tool_args = {}
                 try:
-                    if session:
-                        result = await session.call_tool(tool_name, tool_args)
-                        if isinstance(result.content, list):
-                            tool_result = "\n".join(str(item) for item in result.content)
-                        else:
-                            tool_result = str(result.content)
+                    if call_tool:
+                        tool_result = await call_tool(tool_name, tool_args)
                     else:
-                        tool_result = "No session available."
+                        tool_result = "No tool executor available."
                 except Exception as e:
                     tool_result = f"Error calling tool: {e}"
                 messages.append({

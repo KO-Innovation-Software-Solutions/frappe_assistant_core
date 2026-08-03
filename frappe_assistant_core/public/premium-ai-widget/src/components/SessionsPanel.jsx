@@ -86,8 +86,7 @@ export default function SessionsPanel({ onClose, onSelect, currentSessionName })
           >
           <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-semibold text-slate-900 dark:text-white">{s.name}</div>
-          <div className="truncate text-sm text-slate-600 dark:text-slate-300">{shortName(firstMessages[s.name] || s.preview)}</div>
+          <div className="truncate text-sm font-semibold text-slate-900 dark:text-white">{shortName(firstMessages[s.name] || s.preview)}</div>
           </div>
           <span className="shrink-0 whitespace-nowrap text-[11px] text-slate-400 pt-0.5">{formatDayTime(s.preview_time || s.last_active)}</span>
           </div>
