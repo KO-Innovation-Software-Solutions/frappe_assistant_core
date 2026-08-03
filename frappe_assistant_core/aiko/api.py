@@ -11,6 +11,9 @@ from frappe_assistant_core.core.tool_registry import get_tool_registry
 def _cancel_key(request_id: str) -> str:
     return f"aiko_cancel_{request_id}"
 
+def _job_key(request_id: str) -> str:
+    return f"aiko_job_{request_id}"
+
 def _mark_cancelled(request_id: str):
     """Set a short-lived cache flag so the background worker knows to stop."""
     frappe.cache().set_value(_cancel_key(request_id), 1, expires_in_sec=300)
@@ -22,14 +25,49 @@ def _is_cancelled(request_id: str) -> bool:
 def _clear_cancel(request_id: str):
     frappe.cache().delete_value(_cancel_key(request_id))
 
+def _kill_job(request_id: str):
+    """Best-effort hard stop of the RQ job behind a request.
+
+    Polling a cache flag can't interrupt a job that is currently inside a
+    long LLM/tool call, so we also cancel/kill the underlying RQ job. This
+    is the only way to guarantee the worker stops generating immediately.
+    """
+    job_id = frappe.cache().get_value(_job_key(request_id))
+    if not job_id:
+        return
+    try:
+        from frappe.utils.background_jobs import get_redis_conn
+        from rq.command import send_kill_horse_command, send_stop_job_command
+        from rq.job import Job
+
+        conn = get_redis_conn()
+        job = Job.fetch(job_id, connection=conn)
+        if job is None:
+            return
+        if not job.is_started:
+            # Queued but not started yet — just cancel it.
+            job.cancel()
+            return
+        # Running — ask the worker to stop gracefully first, then hard-kill
+        # shortly after so a long in-flight LLM call can't keep generating.
+        send_stop_job_command(conn, job_id)
+        try:
+            send_kill_horse_command(conn, job_id, timeout=5)
+        except Exception:
+            pass
+    except Exception:
+        frappe.log_error(title="AIKO Cancel Job Error", message=frappe.get_traceback())
+
 @frappe.whitelist(methods=["POST"])
 def cancel_chat(request_id: str):
-    """Called by the frontend stop button. Sets a cache flag the worker polls."""
+    """Called by the frontend stop button. Sets a cache flag the worker polls
+    and hard-kills the enqueued RQ job so generation stops immediately."""
     if not frappe.session.user or frappe.session.user == "Guest":
         frappe.throw(_("Authentication required"))
     if not request_id:
         frappe.throw(_("request_id is required"))
     _mark_cancelled(request_id)
+    _kill_job(request_id)
     return {"success": True}
 
 def _get_active_llm_info(settings=None):
@@ -139,6 +177,27 @@ def chat(message: str, thread_id: str, request_id: str = None):
         "thread_id": thread_id,
         "request_id": request_id,
     }
+async def _stream_answer(text: str, thread_id: str, request_id: str, user: str, is_cancelled=None, words_per_chunk: int = 6, delay: float = 0.05):
+    """Publishes the already-generated answer to the client in small chunks
+    via aiko_chunk events so it reads like it's being typed live, instead of
+    popping in all at once. The full text is still sent as-is in aiko_done."""
+    words = text.split(" ")
+    if not words:
+        return
+    accumulated = ""
+    for i in range(0, len(words), words_per_chunk):
+        if is_cancelled and is_cancelled():
+            return
+        accumulated = (accumulated + " " + " ".join(words[i:i + words_per_chunk])).strip()
+        await asyncio.to_thread(
+            frappe.publish_realtime,
+            event="aiko_chunk",
+            message={"thread_id": thread_id, "request_id": request_id, "text": accumulated},
+            user=user,
+        )
+        await asyncio.sleep(delay)
+
+
 async def run_chat_job(message: str, thread_id: str, user: str, request_id: str):
     """
     Runs on the background worker. Executes the AIKO agent, publishing
@@ -195,6 +254,8 @@ async def run_chat_job(message: str, thread_id: str, user: str, request_id: str)
         )
         _update_session_meta(session, delta_messages=1)
         frappe.db.commit()
+
+        await _stream_answer(response_text, thread_id, request_id, user, is_cancelled=lambda: _is_cancelled(request_id))
 
         frappe.publish_realtime(
             event="aiko_done",
@@ -311,6 +372,24 @@ async def run_dashboard_job(message: str, thread_id: str, user: str, request_id:
         if _is_cancelled(request_id):
             _clear_cancel(request_id)
             frappe.logger().info(f"AIKO dashboard request {request_id} was cancelled — skipping save.")
+            try:
+                _save_dashboard_message(session.name, role="assistant", content="_Response stopped._")
+                _update_dashboard_session_meta(session, delta_messages=1)
+                frappe.db.commit()
+            except Exception:
+                frappe.db.rollback()
+                frappe.log_error(title="AIKO Dashboard Stop-Save Error", message=frappe.get_traceback())
+            frappe.publish_realtime(
+                event="aiko_dashboard_done",
+                message={
+                    "thread_id": thread_id,
+                    "request_id": request_id,
+                    "success": False,
+                    "cancelled": True,
+                    "error": "Stopped.",
+                },
+                user=user,
+            )
             return
 
         response_text = result.get("content", "")
@@ -403,7 +482,7 @@ def get_dashboard_session_messages(thread_id: str):
     messages = frappe.db.get_list(
         "Aiko Dashboard Message",
         filters={"session": session_name},
-        fields=["role", "content", "ui", "creation"],
+        fields=["role", "content", "ui", "tool_calls_snapshot", "creation"],
         order_by="creation asc",
     )
     return {"thread_id": thread_id, "messages": messages}
@@ -414,7 +493,7 @@ def dashboard_chat(message: str, thread_id: str, request_id: str = None):
         frappe.throw(_("Authentication required"))
     request_id = request_id or frappe.generate_hash(length=10)
     try:
-        frappe.enqueue(
+        job = frappe.enqueue(
             "frappe_assistant_core.aiko.api.run_dashboard_job_sync",
             queue="default",
             timeout=300,
@@ -423,6 +502,8 @@ def dashboard_chat(message: str, thread_id: str, request_id: str = None):
             user=frappe.session.user,
             request_id=request_id,
         )
+        if job and getattr(job, "id", None):
+            frappe.cache().set_value(_job_key(request_id), job.id, expires_in_sec=3600)
     except Exception:
         frappe.log_error(title="AIKO Dashboard Enqueue Error", message=frappe.get_traceback())
         return {"success": False, "error": "Could not start the request. Please try again."}

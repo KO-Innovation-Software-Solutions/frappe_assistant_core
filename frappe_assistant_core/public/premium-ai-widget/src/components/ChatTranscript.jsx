@@ -149,7 +149,8 @@ export default function ChatTranscript({ messages, onPrompt, onRetry, emptySugge
                   <AssistantGlassCard>
                     <RichResponseCard
                       text={message.text}
-                      onPrompt={onPrompt}
+                      onPrompt={onSuggestionClick}
+                      streaming={message.streaming}
                       animate={message.id === messages[messages.length - 1]?.id}
                     />
                   </AssistantGlassCard>

@@ -157,7 +157,7 @@ class OllamaProvider:
                 }
                 ui = None
                 manifest = None
-                if want_ui:
+                if want_ui and not cancelled():
                     if on_stage:
                         await on_stage("Formatting dashboard…")
                     ui = await self._render_as_openui(final_answer, query, tool_call_log)

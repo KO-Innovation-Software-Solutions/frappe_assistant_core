@@ -52,6 +52,7 @@ export default function AIWidgetShell() {
   const [sessionsOpen, setSessionsOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [sessions, setSessions] = useState(null)
+  const [visibleSessionCount, setVisibleSessionCount] = useState(10)
   const [firstMessages, setFirstMessages] = useState({})
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
@@ -71,6 +72,12 @@ export default function AIWidgetShell() {
   const sessionTitleRef = useRef(null)
   const openRef = useRef(open)
   const abortedRequestsRef = useRef(new Set())
+  // Mirrors `isThinking`, but as a ref: state updates only land in the DOM on
+  // the next render, leaving a brief window where a second click (e.g. a
+  // related-query button on an earlier message) can slip past a state-based
+  // check before the disabled prop actually paints. This ref is set
+  // synchronously the instant a send starts, closing that gap.
+  const isThinkingRef = useRef(false)
   useEffect(() => { openRef.current = open }, [open])
 
   const shellClass = useMemo(() => {
@@ -139,6 +146,7 @@ export default function AIWidgetShell() {
           time: Date.now()
         })
       })
+      isThinkingRef.current = false
       setIsThinking(false)
       if (data.session_name && !sessionNameRef.current) {
         sessionNameRef.current = data.session_name
@@ -203,6 +211,7 @@ export default function AIWidgetShell() {
     sessionTitleRef.current = null
     setMessages([])
     setInput('')
+    isThinkingRef.current = false
     setIsThinking(false)
     setSessionsOpen(false)
     setSuggestions(pickRandom(SUGGESTIONS, 4))
@@ -212,6 +221,8 @@ export default function AIWidgetShell() {
   const handleLoadSession = (sessionName, threadId) => {
     sessionNameRef.current = sessionName
     threadIdRef.current = threadId
+    isThinkingRef.current = false
+    setIsThinking(false)
     setSessionsOpen(false)
     setMessages([{ id: uid(), role: 'ai', type: 'rich', text: 'Loading messages…' }])
     frappe.call({
@@ -235,6 +246,8 @@ export default function AIWidgetShell() {
     const trimmed = (value || '').trim()
     if (!trimmed && !attachedFile) return
     if (messageCount >= 10) return
+    if (isThinkingRef.current) return
+    isThinkingRef.current = true
     if (!sessionTitleRef.current) {
       sessionTitleRef.current = (trimmed || 'Sent a file').slice(0, 40) + (trimmed.length > 40 ? '…' : '')
     }
@@ -265,11 +278,13 @@ export default function AIWidgetShell() {
       callback: (r) => {
         if (!r.message || !r.message.success) {
           setMessages((prev) => prev.filter((m) => m.id !== thinkingMessage.id).concat({ id: uid(), role: 'ai', text: 'Could not start the request. Please try again.', failed: true, retryText: trimmed, time: Date.now() }))
+          isThinkingRef.current = false
           setIsThinking(false)
         }
       },
       error: () => {
         setMessages((prev) => prev.filter((m) => m.id !== thinkingMessage.id).concat({ id: uid(), role: 'ai', text: 'Network error or server unavailable.', failed: true, retryText: trimmed, time: Date.now() }))
+        isThinkingRef.current = false
         setIsThinking(false)
       }
     })
@@ -283,6 +298,7 @@ export default function AIWidgetShell() {
       frappe.call({ method: 'frappe_assistant_core.aiko.api.cancel_chat', args: { request_id: stoppedRequestId } })
     }
     setMessages((prev) => prev.filter((m) => m.id !== thinkingMsgIdRef.current).concat({ id: uid(), role: 'ai', type: 'rich', text: '_Response stopped._', time: Date.now() }))
+    isThinkingRef.current = false
     setIsThinking(false)
     frappe.call({ method: 'frappe_assistant_core.aiko.api.save_stopped_message', args: { thread_id: threadIdRef.current } })
   }
@@ -308,7 +324,7 @@ export default function AIWidgetShell() {
   // ── FULLSCREEN: sidebar layout ──
   if (fullscreen) {
     return (
-      <section className={shellClass} aria-label="AI assistant fullscreen" role="dialog" aria-modal="false">
+      <section className={`${shellClass} font-sans`} aria-label="AI assistant fullscreen" role="dialog" aria-modal="false">
         <div className="flex h-full w-full">
           <aside className={`flex shrink-0 flex-col border-r border-brand-100/60 bg-white transition-all duration-300 ${sidebarOpen ? 'w-72' : 'w-0 overflow-hidden'}`}>
             <div className="flex items-center justify-between px-4 py-4">
@@ -344,21 +360,24 @@ export default function AIWidgetShell() {
               {sessions && filteredSessions.length === 0 && (
                 <div className="px-3 py-4 text-xs text-slate-400">No chats found.</div>
               )}
-              {sessions && filteredSessions.map((s) => (
+              {sessions && filteredSessions.slice(0, visibleSessionCount).map((s) => (
                   <button
                     key={s.name}
                     onClick={() => handleLoadSession(s.name, s.thread_id)}
                     className={`w-full rounded-xl px-3 py-2 text-left transition-colors hover:bg-brand-50 ${s.name === sessionNameRef.current ? 'bg-brand-50' : ''}`}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-semibold text-slate-900">{s.name}</div>
-                        <div className="truncate text-sm text-slate-600">{shortName(firstMessages[s.name] || s.preview)}</div>
-                      </div>
-                      <span className="shrink-0 whitespace-nowrap pt-0.5 text-[11px] text-slate-400">{formatDayTime(s.preview_time || s.last_active)}</span>
-                    </div>
+                    <div className="truncate text-sm font-medium text-slate-900">{shortName(firstMessages[s.name] || s.preview)}</div>
+                    <div className="text-[11px] text-slate-400">{formatDayTime(s.preview_time || s.last_active)}</div>
                   </button>
                 ))}
+              {sessions && filteredSessions.length > visibleSessionCount && (
+                <button
+                  onClick={() => setVisibleSessionCount((n) => n + 10)}
+                  className="w-full rounded-xl px-3 py-2 text-center text-xs font-medium text-brand-600 hover:bg-brand-50"
+                >
+                  Load more
+                </button>
+              )}
             </div>
           </aside>
 
@@ -396,7 +415,7 @@ export default function AIWidgetShell() {
 
   // ── COMPACT WIDGET PANEL ──
   return (
-    <section className={shellClass} aria-label="AI desktop assistant" role="dialog" aria-modal="false">
+    <section className={`${shellClass} font-sans`} aria-label="AI desktop assistant" role="dialog" aria-modal="false">
       <WidgetHeader
         onNewChat={handleNewChat}
         onHistory={() => setSessionsOpen((v) => !v)}

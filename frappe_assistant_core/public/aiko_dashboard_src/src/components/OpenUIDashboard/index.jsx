@@ -87,7 +87,12 @@ function IconRail() {
 function DashboardLayout({ library, starters }) {
   const { conversation, dashboardCode, isStreaming, clear, showHistory, setShowHistory } = useDashboard();
   const hasDashboard = dashboardCode !== null;
-  const isEmpty = conversation.length === 0 && !hasDashboard;
+  // isStreaming must be part of this check: switching to a thread that's
+  // still generating (or one you just started generating on) can briefly
+  // have an empty conversation/no dashboardCode yet, and without this it
+  // fell through to the starter-grid empty state instead of the
+  // dashboard/chat split view where the "Generating…" indicator lives.
+  const isEmpty = conversation.length === 0 && !hasDashboard && !isStreaming;
 
   return (
     <div style={{
