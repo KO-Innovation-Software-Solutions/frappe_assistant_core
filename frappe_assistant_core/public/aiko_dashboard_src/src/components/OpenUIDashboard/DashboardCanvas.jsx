@@ -235,6 +235,10 @@ export function DashboardCanvas({ library }) {
     setIsExporting(true);
     try {
       const canvas = await captureDashboard();
+      if (!canvas) {
+        setMailStatus("Nothing to capture yet");
+        return;
+      }
       const imgData = canvas.toDataURL("image/png");
       frappe.call({
         method: "frappe_assistant_core.api.admin_api.send_dashboard_mail",

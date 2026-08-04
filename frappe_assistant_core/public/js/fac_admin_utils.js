@@ -11,6 +11,34 @@
     // We use a dedicated converter instance with tables enabled.
     let _facMarkdownConverter = null;
 
+    // Strip dangerous tags/attributes from rendered HTML before it is injected
+    // via innerHTML. Showdown passes raw inline HTML through untouched, so a
+    // template/skill authored with <img onerror=...> or <script> would otherwise
+    // execute. DOMParser + attribute walk avoids a dependency on DOMPurify.
+    ns.sanitizeHtml = function(html) {
+        if (!html) return '';
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        doc.querySelectorAll(
+            'script, iframe, object, embed, link, meta, style, base, form, input, button, select, textarea'
+        ).forEach((el) => el.remove());
+        doc.querySelectorAll('*').forEach((el) => {
+            [...el.attributes].forEach((attr) => {
+                const name = attr.name.toLowerCase();
+                if (name.startsWith('on')) { el.removeAttribute(attr.name); return; }
+                const val = (attr.value || '').trim().toLowerCase();
+                if (['href', 'src', 'action', 'formaction', 'xlink:href'].includes(name)) {
+                    if (!val || /^\s*(javascript|vbscript|data):/.test(val)) {
+                        el.removeAttribute(attr.name);
+                    }
+                }
+                if (name === 'style' && /(expression|javascript|behavior|url\s*\(\s*["']?\s*(javascript|vbscript))/.test(val)) {
+                    el.removeAttribute(attr.name);
+                }
+            });
+        });
+        return doc.body.innerHTML;
+    };
+
     ns.renderMarkdown = function(text) {
         if (!text) return '';
         if (!_facMarkdownConverter) {
@@ -29,7 +57,7 @@
             }
         }
         if (_facMarkdownConverter) {
-            return _facMarkdownConverter.makeHtml(text);
+            return ns.sanitizeHtml(_facMarkdownConverter.makeHtml(text));
         }
         // Fallback
         return `<pre>${frappe.utils.escape_html(text)}</pre>`;
