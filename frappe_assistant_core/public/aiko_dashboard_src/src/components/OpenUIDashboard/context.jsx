@@ -229,33 +229,25 @@ export function DashboardProvider({ children }) {
         const hasCode = !!rawUi;
         const hasText = !!rawText;
         const toolsUsed = data.tool_calls || [];
+        const invalid = hasCode && rawUi && looksLikeKeywordArgs(rawUi);
+        const content = invalid
+          ? "The generated dashboard used invalid syntax (keyword arguments) and could not be rendered. Try refreshing."
+          : (rawUi || rawText);
 
         setConversation((prev) => [
           ...prev,
           {
             role: "assistant",
-            content: rawUi || rawText,
-            text: hasText ? rawText : undefined,
-            hasCode,
+            content,
+            text: invalid ? content : (hasText ? rawText : undefined),
+            hasCode: invalid ? false : hasCode,
             tools: toolsUsed,
             suggestions: data.suggestions || [],
           },
         ]);
 
-        if (hasCode && rawUi) {
-          if (looksLikeKeywordArgs(rawUi)) {
-            setConversation((prev) => [
-              ...prev,
-              {
-                role: "assistant",
-                content: "The generated dashboard used invalid syntax (keyword arguments) and could not be rendered. Try refreshing.",
-                text: "The generated dashboard used invalid syntax (keyword arguments) and could not be rendered. Try refreshing.",
-                hasCode: false,
-              },
-            ]);
-          } else {
-            setDashboardCode(normalizeDsl(rawUi));
-          }
+        if (hasCode && rawUi && !invalid) {
+          setDashboardCode(normalizeDsl(rawUi));
         }
       } else {
         setConversation((prev) => [
@@ -293,12 +285,16 @@ export function DashboardProvider({ children }) {
       const requestId = frappe.utils.get_random(10);
       const thisThread = threadId.current;
 
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       updatePendingThreads((prev) => ({ ...prev, [thisThread]: requestId }));
 
       frappe.call({
         method: "frappe_assistant_core.aiko.api.dashboard_chat",
         args: { message: trimmed, thread_id: thisThread, request_id: requestId },
         callback: (r) => {
+          if (controller.signal.aborted) return;
           if (!r.message || !r.message.success) {
             updatePendingThreads((prev) => {
               const next = { ...prev };
@@ -314,6 +310,7 @@ export function DashboardProvider({ children }) {
           }
         },
         error: () => {
+          if (controller.signal.aborted) return;
           updatePendingThreads((prev) => {
             const next = { ...prev };
             delete next[thisThread];
@@ -434,7 +431,7 @@ export function DashboardProvider({ children }) {
         setRefreshTick((n) => n + 1);
       },
       error: () => {
-        queryMapRef.current[key] = null;
+        delete queryMapRef.current[key];
       },
     });
     return undefined;
@@ -597,6 +594,15 @@ export function DashboardProvider({ children }) {
 
   const clear = () => {
     abortRef.current?.abort();
+    abortRef.current = null;
+    // Drop the tracked in-flight request so late realtime events
+    // (aiko_dashboard_stage/aiko_dashboard_done) are rejected by the
+    // request_id guard and never land into the cleared conversation.
+    updatePendingThreads((prev) => {
+      const next = { ...prev };
+      delete next[threadId.current];
+      return next;
+    });
     setDashboardCode(null);
     setConversation([]);
     setStreamingText("");

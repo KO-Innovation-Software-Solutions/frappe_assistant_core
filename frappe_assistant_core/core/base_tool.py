@@ -186,6 +186,8 @@ class BaseTool(ABC):
         }
 
         if expected_type in type_map:
+            if expected_type == "number" and isinstance(value, bool):
+                return False
             return isinstance(value, type_map[expected_type])
         return True
 
@@ -469,6 +471,8 @@ class BaseTool(ABC):
         for key, value in arguments.items():
             if _is_sensitive_key(key):
                 sanitized[key] = "***REDACTED***"
+            elif isinstance(value, (dict, list)):
+                sanitized[key] = self._sanitize_data(value)
             else:
                 sanitized[key] = value
         return sanitized

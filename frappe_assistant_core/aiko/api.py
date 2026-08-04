@@ -89,7 +89,7 @@ def _get_active_llm_info(settings=None):
 
 
 def _get_or_create_session(thread_id: str, user: str):
-    existing_name = frappe.db.get_value("Aiko Chat Session", {"thread_id": thread_id}, "name")
+    existing_name = frappe.db.get_value("Aiko Chat Session", {"thread_id": thread_id, "user": user}, "name")
     if existing_name:
         return frappe.get_doc("Aiko Chat Session", existing_name, for_update=False, ignore_permissions=True)
 
@@ -102,9 +102,9 @@ def _get_or_create_session(thread_id: str, user: str):
     })
     try:
         session.insert(ignore_permissions=True)
-    except frappe.db.IntegrityError:
+    except frappe.exceptions.DuplicateEntryError:
         frappe.db.rollback()
-        existing_name = frappe.db.get_value("Aiko Chat Session", {"thread_id": thread_id}, "name")
+        existing_name = frappe.db.get_value("Aiko Chat Session", {"thread_id": thread_id, "user": user}, "name")
         if existing_name:
             return frappe.get_doc("Aiko Chat Session", existing_name, for_update=False, ignore_permissions=True)
         raise
@@ -188,7 +188,7 @@ def chat(message: str, thread_id: str, request_id: str = None, reasoning_effort:
         reasoning_effort = None  # falls back to auto-selection in the provider
 
     try:
-        frappe.enqueue(
+        job = frappe.enqueue(
             "frappe_assistant_core.aiko.api.run_chat_job_sync",
             queue="default",
             timeout=300,
@@ -200,6 +200,8 @@ def chat(message: str, thread_id: str, request_id: str = None, reasoning_effort:
             pool_id=reservation.get("pool_id"),
             reserved=reservation.get("reserved", 0),
         )
+        if job and getattr(job, "id", None):
+            frappe.cache().set_value(_job_key(request_id), job.id, expires_in_sec=3600)
     except Exception:
         frappe.log_error(title="AIKO Chat Enqueue Error", message=frappe.get_traceback())
         from frappe_assistant_core.utils.token_limits import true_up_tokens
@@ -285,6 +287,24 @@ async def run_chat_job(message: str, thread_id: str, user: str, request_id: str,
         if _is_cancelled(request_id):
             _clear_cancel(request_id)
             frappe.logger().info(f"AIKO request {request_id} was cancelled — skipping assistant save.")
+            try:
+                _save_message(session.name, role="assistant", content="_Response stopped._")
+                _update_session_meta(session, delta_messages=1)
+                frappe.db.commit()
+            except Exception:
+                frappe.db.rollback()
+                frappe.log_error(title="AIKO Chat Stop-Save Error", message=frappe.get_traceback())
+            frappe.publish_realtime(
+                event="aiko_done",
+                message={
+                    "thread_id": thread_id,
+                    "request_id": request_id,
+                    "success": False,
+                    "cancelled": True,
+                    "error": "Stopped.",
+                },
+                user=user,
+            )
             return
 
         response_text = result.get("content", "")
@@ -354,7 +374,7 @@ async def run_chat_job(message: str, thread_id: str, user: str, request_id: str,
         )
 
 def _get_or_create_dashboard_session(thread_id: str, user: str):
-    existing_name = frappe.db.get_value("Aiko Dashboard Session", {"thread_id": thread_id}, "name")
+    existing_name = frappe.db.get_value("Aiko Dashboard Session", {"thread_id": thread_id, "user": user}, "name")
     if existing_name:
         return frappe.get_doc("Aiko Dashboard Session", existing_name, for_update=False, ignore_permissions=True)
 
@@ -369,7 +389,7 @@ def _get_or_create_dashboard_session(thread_id: str, user: str):
         session.insert(ignore_permissions=True)
     except frappe.exceptions.DuplicateEntryError:
         frappe.db.rollback()
-        existing_name = frappe.db.get_value("Aiko Dashboard Session", {"thread_id": thread_id}, "name")
+        existing_name = frappe.db.get_value("Aiko Dashboard Session", {"thread_id": thread_id, "user": user}, "name")
         if existing_name:
             return frappe.get_doc("Aiko Dashboard Session", existing_name, for_update=False, ignore_permissions=True)
         raise
@@ -443,8 +463,8 @@ async def run_dashboard_job(message: str, thread_id: str, user: str, request_id:
         input_tokens = result.get("input_tokens", 0)
         output_tokens = result.get("output_tokens", 0)
 
-        from frappe_assistant_core.utils.token_limits import record_pool_usage
-        record_pool_usage(pool_id, input_tokens + output_tokens)  # pool the real cost, even if cancelled below — those tokens were genuinely spent
+        from frappe_assistant_core.utils.token_limits import update_token_usage_cache
+        update_token_usage_cache(user, input_tokens + output_tokens)  # pool the real cost, even if cancelled below — those tokens were genuinely spent
 
         if _is_cancelled(request_id):
             _clear_cancel(request_id)
@@ -909,13 +929,44 @@ def extract_unique_queries(dsl_src: str):
     # ---------------- PASS 1: regex (seeded, reliable for big literals) -----
     import re as _re
     import ast as _py_ast
-    pattern = _re.compile(
-        r'Query\(\s*[\"\']([A-Za-z_][A-Za-z0-9_]*)[\"\']\s*,\s*(\{.*?\})\s*(?:,\s*\[.*?\])?\s*\)',
-        _re.DOTALL,
-    )
-    for m in pattern.finditer(dsl_src):
-        tool_val = m.group(1)
-        args_src = m.group(2)
+
+    def _find_balanced_brace(text, open_idx):
+        """Return the index just past the matching '}' for a '{' at open_idx."""
+        depth = 0
+        in_str = None
+        esc = False
+        for i in range(open_idx, len(text)):
+            ch = text[i]
+            if in_str is not None:
+                if esc:
+                    esc = False
+                elif ch == "\\":
+                    esc = True
+                elif ch == in_str:
+                    in_str = None
+                continue
+            if ch in "\"'":
+                in_str = ch
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return i + 1
+        return None
+
+    # Match Query("tool", {...}) with proper brace balancing so our dict
+    # extraction isn't truncated when an argument itself contains nested braces.
+    q_re = _re.compile(r'Query\(\s*["\']([A-Za-z_][A-Za-z0-9_]*)["\']\s*,')
+    for qm in q_re.finditer(dsl_src):
+        open_brace = dsl_src.find("{", qm.end())
+        if open_brace == -1:
+            continue
+        close_brace = _find_balanced_brace(dsl_src, open_brace)
+        if close_brace is None:
+            continue
+        args_src = dsl_src[open_brace:close_brace]
+        tool_val = qm.group(1)
         parsed_args = {}
         try:
             parsed_args = _py_ast.literal_eval(args_src)

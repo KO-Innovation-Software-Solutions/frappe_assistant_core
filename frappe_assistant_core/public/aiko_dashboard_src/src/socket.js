@@ -31,9 +31,18 @@ export function sendPrompt({ message, threadId, onStage, onDone, onError }) {
   };
 
   function cleanup() {
+    if (fallbackTimer) clearTimeout(fallbackTimer);
     frappe.realtime.off("aiko_stage", stageHandler);
     frappe.realtime.off("aiko_done", doneHandler);
   }
+
+  // Fallback so listeners never leak if the server accepts the request but
+  // never emits aiko_stage/aiko_done (job crash/hang). Generations are allowed
+  // up to the enqueue timeout (300s) plus a small buffer before we give up.
+  let fallbackTimer = setTimeout(() => {
+    cleanup();
+    onError?.("Request timed out. Try again.");
+  }, 330000);
 
   frappe.realtime.on("aiko_stage", stageHandler);
   frappe.realtime.on("aiko_done", doneHandler);
@@ -53,5 +62,6 @@ export function sendPrompt({ message, threadId, onStage, onDone, onError }) {
     },
   });
 
-  return requestId;
+  // Allow the caller to tear down listeners early (e.g. on unmount).
+  return { requestId, cleanup };
 }

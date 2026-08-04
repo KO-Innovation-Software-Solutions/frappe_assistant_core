@@ -124,7 +124,7 @@ function ArtifactSidebar({ artifacts, loading, currentArtifactName, onSelect, on
 
   const filteredArtifacts = search.trim()
     ? artifacts.filter((a) =>
-        (a.first_message || a.title || a.name)
+        String(a.first_message || a.title || a.name || "")
           .toLowerCase()
           .includes(search.trim().toLowerCase())
       )
@@ -348,6 +348,7 @@ function DashboardPane({ artifactName }) {
 
   const queriesRef = useRef([]);
   const queryMapRef = useRef({});
+  const artifactLoadTokenRef = useRef(0);
 
   useEffect(() => { ensureGlobalStyles(); }, []);
 
@@ -373,6 +374,9 @@ function DashboardPane({ artifactName }) {
 
   useEffect(() => {
     if (!artifactName) return;
+    // Token guard so a slow response for a previously-selected artifact can't
+    // clobber the one the user has since navigated to (stale-response race).
+    const loadToken = ++artifactLoadTokenRef.current;
     setDashboardCode(null);
     setTitle("");
     setLastRefreshedAt(null);
@@ -380,10 +384,12 @@ function DashboardPane({ artifactName }) {
     queriesRef.current = [];
     queryMapRef.current = {};
 
+    let refreshTimer = null;
     frappe.call({
       method: "frappe_assistant_core.aiko.api.get_dashboard_artifact",
       args: { artifact_name: artifactName },
       callback: (r) => {
+        if (loadToken !== artifactLoadTokenRef.current) return;
         const data = r.message;
         if (!data || !data.ui) {
           setLoadError("This artifact has no dashboard content.");
@@ -392,10 +398,17 @@ function DashboardPane({ artifactName }) {
         setTitle(data.title || "");
         setLastRefreshedAt(data.last_refreshed_at || null);
         setDashboardCode(normalizeDsl(data.ui));
-        setTimeout(() => refresh(), 0);
+        refreshTimer = setTimeout(() => refresh(), 0);
       },
-      error: () => setLoadError("Could not load this artifact."),
+      error: () => {
+        if (loadToken === artifactLoadTokenRef.current) {
+          setLoadError("Could not load this artifact.");
+        }
+      },
     });
+    return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [artifactName]);
 
