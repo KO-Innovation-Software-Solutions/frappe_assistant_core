@@ -53,6 +53,11 @@ export default function AikoFullPage() {
   const [suggestions] = useState(() => pickRandom(SUGGESTIONS, 4))
   const [currentSessionName, setCurrentSessionName] = useState(null)
   const [sidebarSearch, setSidebarSearch] = useState('')
+  const [reasoningEffort, setReasoningEffort] = useState('auto')
+  const [frozen, setFrozen] = useState(false)
+  const [frozenReason, setFrozenReason] = useState('')
+  const [connectionError, setConnectionError] = useState(false)
+  const [tokenUsage, setTokenUsage] = useState(null)
 
   const threadIdRef = useRef(frappe.utils.get_random(10))
   const currentRequestIdRef = useRef(null)
@@ -102,7 +107,22 @@ export default function AikoFullPage() {
     })
   }
 
+  const fetchTokenUsage = () => {
+    frappe.call({
+      method: 'frappe_assistant_core.aiko.api.get_token_usage',
+      callback: (r) => {
+        if (r.message) {
+          setTokenUsage(r.message)
+          setFrozen(!!r.message.frozen)
+          setFrozenReason(r.message.frozen ? 'Token limit exceeded. Please contact your administrator.' : '')
+        }
+      },
+    })
+  }
+
   useEffect(() => { loadSessions() }, [])
+
+  useEffect(() => { fetchTokenUsage() }, [])
 
   useEffect(() => {
     const onDone = (data) => {
@@ -122,6 +142,10 @@ export default function AikoFullPage() {
         return prev.concat({ id: uid(), role: 'ai', type: 'rich', text: finalText, time: Date.now() })
       })
       isThinkingRef.current = false
+      if (data.token_usage) setTokenUsage(data.token_usage)
+      setMessages((prev) => prev.filter((m) => m.id !== thinkingMsgIdRef.current).concat({
+        id: uid(), role: 'ai', type: 'rich', text: data.success ? data.data : (data.error || 'An error occurred.'), time: Date.now()
+      }))
       setIsThinking(false)
       if (data.session_name && !sessionNameRef.current) {
         sessionNameRef.current = data.session_name
@@ -155,6 +179,8 @@ export default function AikoFullPage() {
     setInput('')
     isThinkingRef.current = false
     setIsThinking(false)
+    setConnectionError(false)
+    fetchTokenUsage() // re-check the real frozen status instead of assuming it's cleared
   }
 
   const handleLoadSession = (sessionName, threadId) => {
@@ -192,10 +218,21 @@ export default function AikoFullPage() {
     currentRequestIdRef.current = requestId
     frappe.call({
       method: 'frappe_assistant_core.aiko.api.chat',
-      args: { message: trimmed, thread_id: threadIdRef.current, request_id: requestId },
+      args: { message: trimmed, thread_id: threadIdRef.current, request_id: requestId, reasoning_effort: reasoningEffort },
+      callback: (r) => {
+        if (!r.message || !r.message.success) {
+          if (r.message && r.message.frozen) {
+            setMessages((prev) => prev.filter((m) => m.id !== thinkingMessage.id))
+            setFrozen(true)
+            setFrozenReason(r.message.reason || 'Token limit exceeded. Please contact your administrator.')
+          }
+          setIsThinking(false)
+        }
+      },
       error: () => {
         isThinkingRef.current = false
         setMessages((prev) => prev.filter((m) => m.id !== thinkingMessage.id).concat({ id: uid(), role: 'ai', text: 'Network error.', failed: true, retryText: trimmed, time: Date.now() }))
+        setConnectionError(true)
         setIsThinking(false)
       }
     })
@@ -259,7 +296,7 @@ export default function AikoFullPage() {
               onClick={() => handleLoadSession(s.name, s.thread_id)}
               className={`w-full rounded-xl px-3 py-2 text-left transition-colors hover:bg-brand-50 ${s.name === currentSessionName ? 'bg-brand-50' : ''}`}
             >
-              <div className="truncate text-sm font-medium text-slate-900">{shortName(firstMessages[s.name] || s.preview)}</div>
+              <div className="truncate text-sm font-semibold text-slate-900">{shortName(firstMessages[s.name] || s.preview)}</div>
               <div className="text-[11px] text-slate-400">{formatDayTime(s.preview_time || s.last_active)}</div>
             </button>
           ))}
@@ -289,7 +326,11 @@ export default function AikoFullPage() {
           onSuggestionClick={handleSend}
           isThinking={isThinking}
         />
-        <FloatingComposer input={input} setInput={setInput} onSend={handleSend} onStop={handleStop} isThinking={isThinking} />
+        <FloatingComposer input={input} setInput={setInput} onSend={handleSend} onStop={handleStop} isThinking={isThinking}
+          reasoningEffort={reasoningEffort} onReasoningEffortChange={setReasoningEffort}
+          frozen={frozen} frozenReason={frozenReason} connectionError={connectionError}
+          tokenUsage={tokenUsage}
+        />
       </div>
     </div>
   )

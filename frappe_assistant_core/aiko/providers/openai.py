@@ -11,6 +11,42 @@ def _humanize_tool_name(name: str) -> str:
     return label or name
 
 
+# DeepSeek V4 Flash only understands three reasoning tiers on DeepInfra:
+# "none" (non-think, fastest/cheapest), "high" (standard think), "xhigh" (max think).
+VALID_REASONING_EFFORTS = {"none", "high", "xhigh"}
+
+_HEAVY_SIGNALS = (
+    "why", "explain", "compare", "analyze", "analyse", "calculate", "compute",
+    "step by step", "step-by-step", "root cause", "debug", "optimi", "plan",
+    "strategy", "forecast", "trend", "correlation", "reconcile", "audit",
+)
+
+
+def _auto_reasoning_effort(query: str) -> str:
+    """
+    Picks a reasoning tier when the caller didn't force one, so the bot isn't
+    paying max-thinking latency/cost on every single message.
+    """
+    q = (query or "").lower().strip()
+    word_count = len(q.split())
+    has_heavy_signal = any(s in q for s in _HEAVY_SIGNALS)
+
+    if word_count <= 6 and not has_heavy_signal:
+        return "none"
+    if has_heavy_signal or word_count > 40:
+        return "xhigh"
+    return "high"
+
+
+def _resolve_reasoning_effort(query: str, reasoning_effort) -> str:
+    """Normalizes whatever came in from the frontend into a valid effort tier."""
+    if not reasoning_effort or reasoning_effort == "auto":
+        return _auto_reasoning_effort(query)
+    if reasoning_effort not in VALID_REASONING_EFFORTS:
+        return _auto_reasoning_effort(query)
+    return reasoning_effort
+
+
 class OpenAIProvider:
     def __init__(self, settings):
         from openai import OpenAI
@@ -103,21 +139,9 @@ class OpenAIProvider:
             frappe.logger().error(f"_render_as_openui failed: {e}", exc_info=True)
             return None
 
-    async def process_query(self, query: str, session, messages: list, on_stage=None, is_cancelled=None, want_ui=False) -> tuple:
+    async def process_query(self, query: str, tools: list, messages: list, on_stage=None, is_cancelled=None, want_ui=False, reasoning_effort=None, thread_id=None, call_tool=None) -> tuple:
         def cancelled():
             return is_cancelled is not None and is_cancelled()
-        tools = []
-        if session:
-            response = await session.list_tools()
-            for tool in response.tools:
-                tools.append({
-                    "type": "function",
-                    "function": {
-                        "name": tool.name,
-                        "description": tool.description or "",
-                        "parameters": tool.inputSchema,
-                    },
-                })
 
         messages.append({"role": "user", "content": query})
 
@@ -139,12 +163,16 @@ class OpenAIProvider:
             if any_tool_called and on_stage:
                 await on_stage("Putting together your answer…")
 
+            kwargs = dict(model=self.model, messages=messages)
+            if tools:
+                kwargs["tools"] = tools
+                kwargs["tool_choice"] = "auto"
+            kwargs["reasoning_effort"] = _resolve_reasoning_effort(query, reasoning_effort)
+            if thread_id:
+                kwargs["prompt_cache_key"] = f"aiko-{thread_id}"
             response = await asyncio.to_thread(
                 self.openai.chat.completions.create,
-                model=self.model,
-                messages=messages,
-                tools=tools if tools else None,
-                tool_choice="auto" if tools else None,
+                **kwargs,
             )
 
             if response.usage:
@@ -211,14 +239,10 @@ class OpenAIProvider:
                     tool_args = {}
 
                 try:
-                    if session:
-                        result = await session.call_tool(tool_name, tool_args)
-                        if isinstance(result.content, list):
-                            tool_result = "\n".join(str(item) for item in result.content)
-                        else:
-                            tool_result = str(result.content)
+                    if call_tool:
+                        tool_result = await call_tool(tool_name, tool_args)
                     else:
-                        tool_result = "No session available."
+                        tool_result = "No tool executor available."
                 except Exception as e:
                     tool_result = f"Error calling tool: {e}"
 

@@ -8,6 +8,9 @@ from frappe_assistant_core.aiko.agent import AikoAgent
 from frappe_assistant_core.aiko.openui.dsl_manifest import rebuild_dsl, resolve_path, format_value
 from frappe_assistant_core.core.tool_registry import get_tool_registry
 
+ALLOWED_REASONING_EFFORTS = {"auto", "none", "high", "xhigh"}
+
+
 def _cancel_key(request_id: str) -> str:
     return f"aiko_cancel_{request_id}"
 
@@ -150,12 +153,39 @@ def save_stopped_message(thread_id: str, request_id: str = None):
     return {"success": True}
 
 @frappe.whitelist()
-def chat(message: str, thread_id: str, request_id: str = None):
+def get_token_usage():
+    if not frappe.session.user or frappe.session.user == "Guest":
+        return {"enabled": False}
+    from frappe_assistant_core.utils.token_limits import check_token_limit
+    result = check_token_limit(frappe.session.user)
+    return {
+        "enabled": result.get("tokens_limit", 0) > 0,
+        "tokens_used": result.get("tokens_used", 0),
+        "tokens_limit": result.get("tokens_limit", 0),
+        "frozen": result.get("frozen", False),
+    }
+
+@frappe.whitelist()
+def chat(message: str, thread_id: str, request_id: str = None, reasoning_effort: str = None):
     if not frappe.session.user or frappe.session.user == "Guest":
         frappe.throw(_("Authentication required"))
 
     user = frappe.session.user
+
+    from frappe_assistant_core.utils.token_limits import reserve_tokens, is_assistant_enabled
+    if not is_assistant_enabled(user):
+        return {"success": False, "frozen": False, "disabled": True, "reason": "AIKO access is not enabled for this account. Please contact your administrator."}
+
+    settings = frappe.get_single("Assistant Core Settings")
+    max_tokens = int(settings.get("max_tokens_per_request") or 0) or 1000
+    reservation = reserve_tokens(user, max_tokens)
+    if not reservation.get("allowed"):
+        return {"success": False, "frozen": True, "reason": reservation.get("reason")}
+
     request_id = request_id or frappe.generate_hash(length=10)
+
+    if reasoning_effort and reasoning_effort not in ALLOWED_REASONING_EFFORTS:
+        reasoning_effort = None  # falls back to auto-selection in the provider
 
     try:
         job = frappe.enqueue(
@@ -166,18 +196,31 @@ def chat(message: str, thread_id: str, request_id: str = None):
             thread_id=thread_id,
             user=user,
             request_id=request_id,
+            reasoning_effort=reasoning_effort,
+            pool_id=reservation.get("pool_id"),
+            reserved=reservation.get("reserved", 0),
         )
         if job and getattr(job, "id", None):
             frappe.cache().set_value(_job_key(request_id), job.id, expires_in_sec=3600)
     except Exception:
         frappe.log_error(title="AIKO Chat Enqueue Error", message=frappe.get_traceback())
+        from frappe_assistant_core.utils.token_limits import true_up_tokens
+        true_up_tokens(reservation.get("pool_id"), reservation.get("reserved", 0), 0)  # release the reservation
         return {"success": False, "error": "Could not start the request. Please try again."}
 
+    from frappe_assistant_core.utils.token_limits import check_token_limit
+    usage = check_token_limit(user)
     return {
         "success": True,
         "queued": True,
         "thread_id": thread_id,
         "request_id": request_id,
+        "token_usage": {
+            "enabled": usage.get("tokens_limit", 0) > 0,
+            "tokens_used": usage.get("tokens_used", 0),
+            "tokens_limit": usage.get("tokens_limit", 0),
+            "frozen": usage.get("frozen", False),
+        },
     }
 async def _stream_answer(text: str, thread_id: str, request_id: str, user: str, is_cancelled=None, words_per_chunk: int = 6, delay: float = 0.05):
     """Publishes the already-generated answer to the client in small chunks
@@ -200,7 +243,7 @@ async def _stream_answer(text: str, thread_id: str, request_id: str, user: str, 
         await asyncio.sleep(delay)
 
 
-async def run_chat_job(message: str, thread_id: str, user: str, request_id: str):
+async def run_chat_job(message: str, thread_id: str, user: str, request_id: str, reasoning_effort: str = None, pool_id: str = None, reserved: int = 0):
     """
     Runs on the background worker. Executes the AIKO agent, publishing
     stage updates as it goes, then publishes the final answer.
@@ -233,7 +276,14 @@ async def run_chat_job(message: str, thread_id: str, user: str, request_id: str)
         # ─────────────────────────────────────────────────────────────────
 
         agent = AikoAgent(thread_id=thread_id)
-        result = await agent.invoke(message, on_stage=on_stage, is_cancelled=lambda: _is_cancelled(request_id))
+        result = await agent.invoke(message, on_stage=on_stage, is_cancelled=lambda: _is_cancelled(request_id), reasoning_effort=reasoning_effort)
+
+        input_tokens = result.get("input_tokens", 0)
+        output_tokens = result.get("output_tokens", 0)
+
+        from frappe_assistant_core.utils.token_limits import true_up_tokens, check_token_limit
+        true_up_tokens(pool_id, reserved, input_tokens + output_tokens)  # correct the reservation to real cost, even if cancelled below
+
         if _is_cancelled(request_id):
             _clear_cancel(request_id)
             frappe.logger().info(f"AIKO request {request_id} was cancelled — skipping assistant save.")
@@ -277,6 +327,7 @@ async def run_chat_job(message: str, thread_id: str, user: str, request_id: str)
 
         await _stream_answer(response_text, thread_id, request_id, user, is_cancelled=lambda: _is_cancelled(request_id))
 
+        usage = check_token_limit(user)
         frappe.publish_realtime(
             event="aiko_done",
             message={
@@ -285,6 +336,12 @@ async def run_chat_job(message: str, thread_id: str, user: str, request_id: str)
                 "success": True,
                 "data": response_text,
                 "session_name": session.name,
+                "token_usage": {
+                    "enabled": usage.get("tokens_limit", 0) > 0,
+                    "tokens_used": usage.get("tokens_used", 0),
+                    "tokens_limit": usage.get("tokens_limit", 0),
+                    "frozen": usage.get("frozen", False),
+                },
             },
             user=user,
         )
@@ -292,6 +349,18 @@ async def run_chat_job(message: str, thread_id: str, user: str, request_id: str)
     except Exception:
         frappe.db.rollback()
         frappe.log_error(title="AIKO Chat Error", message=frappe.get_traceback())
+        try:
+            from frappe_assistant_core.utils.token_limits import true_up_tokens, check_token_limit
+            true_up_tokens(pool_id, reserved, 0)  # release the reservation — we don't know what was actually spent
+            usage = check_token_limit(user)
+            token_usage = {
+                "enabled": usage.get("tokens_limit", 0) > 0,
+                "tokens_used": usage.get("tokens_used", 0),
+                "tokens_limit": usage.get("tokens_limit", 0),
+                "frozen": usage.get("frozen", False),
+            }
+        except Exception:
+            token_usage = None
         frappe.publish_realtime(
             event="aiko_done",
             message={
@@ -299,6 +368,7 @@ async def run_chat_job(message: str, thread_id: str, user: str, request_id: str)
                 "request_id": request_id,
                 "success": False,
                 "error": "Something went wrong while processing your message.",
+                "token_usage": token_usage,
             },
             user=user,
         )
@@ -359,7 +429,7 @@ def _update_dashboard_session_meta(session, delta_messages: int = 1):
     )
 
 
-async def run_dashboard_job(message: str, thread_id: str, user: str, request_id: str):
+async def run_dashboard_job(message: str, thread_id: str, user: str, request_id: str, pool_id: str = None):
     frappe.set_user(user)
 
     async def on_stage(text):
@@ -452,6 +522,7 @@ async def run_dashboard_job(message: str, thread_id: str, user: str, request_id:
     except Exception:
         frappe.db.rollback()
         frappe.log_error(title="AIKO Dashboard Error", message=frappe.get_traceback())
+        # No reservation was made for this simplified path — nothing to release.
         frappe.publish_realtime(
             event="aiko_dashboard_done",
             message={
@@ -464,8 +535,8 @@ async def run_dashboard_job(message: str, thread_id: str, user: str, request_id:
         )
 
 
-def run_dashboard_job_sync(message: str, thread_id: str, user: str, request_id: str):
-    asyncio.run(run_dashboard_job(message, thread_id, user, request_id))
+def run_dashboard_job_sync(message: str, thread_id: str, user: str, request_id: str, pool_id: str = None):
+    asyncio.run(run_dashboard_job(message, thread_id, user, request_id, pool_id))
 
 @frappe.whitelist()
 def list_dashboard_sessions(limit: int = 50):
@@ -518,6 +589,23 @@ def get_dashboard_session_messages(thread_id: str):
 def dashboard_chat(message: str, thread_id: str, request_id: str = None):
     if not frappe.session.user or frappe.session.user == "Guest":
         frappe.throw(_("Authentication required"))
+
+    user = frappe.session.user
+
+    from frappe_assistant_core.utils.token_limits import check_token_limit, is_assistant_enabled, _resolve_pool
+    if not is_assistant_enabled(user):
+        return {"success": False, "frozen": False, "disabled": True, "reason": "AIKO access is not enabled for this account. Please contact your administrator."}
+
+    # Simpler than the main chat path: read-only check, no pre-reservation.
+    # Dashboard has much lower concurrent-request risk than chat, so the
+    # small race window this reopens is an accepted tradeoff for simplicity.
+    settings = frappe.get_single("Assistant Core Settings")
+    usage = check_token_limit(user)
+    if not usage.get("allowed", True):
+        return {"success": False, "frozen": True, "reason": usage.get("reason")}
+
+    pool_id, _limit, _is_client = _resolve_pool(user, settings)
+
     request_id = request_id or frappe.generate_hash(length=10)
     try:
         job = frappe.enqueue(
@@ -526,8 +614,9 @@ def dashboard_chat(message: str, thread_id: str, request_id: str = None):
             timeout=300,
             message=message,
             thread_id=thread_id,
-            user=frappe.session.user,
+            user=user,
             request_id=request_id,
+            pool_id=pool_id,
         )
         if job and getattr(job, "id", None):
             frappe.cache().set_value(_job_key(request_id), job.id, expires_in_sec=3600)
@@ -1332,6 +1421,6 @@ def get_dashboard_artifact(artifact_name: str):
         "ui": doc.ui,
         "last_refreshed_at": doc.last_refreshed_at,
     }
-def run_chat_job_sync(message: str, thread_id: str, user: str, request_id: str):
+def run_chat_job_sync(message: str, thread_id: str, user: str, request_id: str, reasoning_effort: str = None, pool_id: str = None, reserved: int = 0):
     """Sync entry point for Frappe's background worker."""
-    asyncio.run(run_chat_job(message, thread_id, user, request_id))
+    asyncio.run(run_chat_job(message, thread_id, user, request_id, reasoning_effort, pool_id, reserved))

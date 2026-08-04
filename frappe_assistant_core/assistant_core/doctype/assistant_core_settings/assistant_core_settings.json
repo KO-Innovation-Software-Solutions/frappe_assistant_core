@@ -24,6 +24,11 @@
   "execution_limits_info",
   "audit_log_section",
   "audit_log_retention_days",
+  "token_limits_section",
+  "enable_token_limits",
+  "token_limit_column_break",
+  "token_limit_period",
+  "token_limit_reset_day",
   "ocr_tab",
   "ocr_section",
   "ocr_backend",
@@ -191,6 +196,42 @@
    "label": "Retention Period (Days)"
   },
   {
+   "collapsible": 1,
+   "description": "Configure per-user token usage limits. When a user exceeds their limit, the chat will freeze until the period resets.",
+   "fieldname": "token_limits_section",
+   "fieldtype": "Section Break",
+   "label": "Token Limits"
+  },
+  {
+   "default": "0",
+   "description": "Enable per-user token usage limits for AIKO chat. Users who exceed the limit will be blocked from sending messages.",
+   "fieldname": "enable_token_limits",
+   "fieldtype": "Check",
+   "label": "Enable Token Limits"
+  },
+  {
+   "depends_on": "eval:doc.enable_token_limits",
+   "fieldname": "token_limit_column_break",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Monthly",
+   "depends_on": "eval:doc.enable_token_limits",
+   "description": "Period over which token usage is tracked and compared to the limit.",
+   "fieldname": "token_limit_period",
+   "fieldtype": "Select",
+   "label": "Token Limit Period",
+   "options": "Daily\nWeekly\nMonthly"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.enable_token_limits",
+   "description": "Day of month to reset token counters (only applies when period is Monthly).",
+   "fieldname": "token_limit_reset_day",
+   "fieldtype": "Int",
+   "label": "Monthly Reset Day"
+  },
+  {
    "fieldname": "ocr_tab",
    "fieldtype": "Tab Break",
    "label": "OCR"
@@ -343,28 +384,28 @@
    "label": "Ollama Chat Model"
   },
   {
-    "fieldname": "voice_section",
-    "fieldtype": "Section Break",
-    "label": "Voice Features (AIKO Chat)"
-    },
-    {
-    "fieldname": "enable_voice_output",
-    "fieldtype": "Check",
-    "label": "Enable Voice Output (Listen / TTS)",
-    "default": "1",
-    "description": "Globally enable or disable the Listen (text-to-speech) button in AIKO chat for all users."
-    },
-    {
-    "fieldname": "voice_column_break",
-    "fieldtype": "Column Break"
-    },
-    {
-    "fieldname": "enable_voice_input",
-    "fieldtype": "Check",
-    "label": "Enable Voice Input (Mic / STT)",
-    "default": "1",
-    "description": "Globally enable or disable the microphone (speech-to-text) button in AIKO chat for all users."
-    },
+   "fieldname": "voice_section",
+   "fieldtype": "Section Break",
+   "label": "Voice Features (AIKO Chat)"
+  },
+  {
+   "default": "1",
+   "description": "Globally enable or disable the Listen (text-to-speech) button in AIKO chat for all users.",
+   "fieldname": "enable_voice_output",
+   "fieldtype": "Check",
+   "label": "Enable Voice Output (Listen / TTS)"
+  },
+  {
+   "fieldname": "voice_column_break",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "description": "Globally enable or disable the microphone (speech-to-text) button in AIKO chat for all users.",
+   "fieldname": "enable_voice_input",
+   "fieldtype": "Check",
+   "label": "Enable Voice Input (Mic / STT)"
+  },
   {
    "fieldname": "mcp_configuration_tab",
    "fieldtype": "Tab Break",
@@ -511,7 +552,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-06-10 11:27:17.881630",
+ "modified": "2026-08-03 17:29:53.590411",
  "modified_by": "Administrator",
  "module": "Assistant Core",
  "name": "Assistant Core Settings",
