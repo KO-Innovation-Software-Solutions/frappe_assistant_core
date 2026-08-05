@@ -60,8 +60,6 @@ export default function AIWidgetShell() {
   const [isThinking, setIsThinking] = useState(false)
   const [suggestions, setSuggestions] = useState(() => pickRandom(SUGGESTIONS, 4))
   const [hasUnread, setHasUnread] = useState(false)
-  const [attachedFile, setAttachedFile] = useState(null)
-  const [isUploading, setIsUploading] = useState(false)
   const [messageCount, setMessageCount] = useState(0)
   const [closing, setClosing] = useState(false)
   const [reasoningEffort, setReasoningEffort] = useState('auto')
@@ -206,28 +204,6 @@ export default function AIWidgetShell() {
     setHasUnread(false)
   }
 
-  const handleAttach = (file) => {
-    setIsUploading(true)
-    const formData = new FormData()
-    formData.append('file', file, file.name)
-    formData.append('is_private', 0)
-    fetch('/api/method/upload_file', {
-      method: 'POST', body: formData, headers: { 'X-Frappe-CSRF-Token': frappe.csrf_token }
-    })
-      .then((res) => res.json())
-      .then((res) => {
-        const msg = res.message || {}
-        setAttachedFile({ file_url: msg.file_url, file_name: msg.file_name || file.name, is_image: /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(msg.file_name || file.name) })
-        setIsUploading(false)
-      })
-      .catch(() => {
-        setIsUploading(false)
-        setAttachedFile(null)
-        frappe.show_alert({ message: 'File upload failed.', indicator: 'red' })
-      })
-  }
-  const removeAttachment = () => setAttachedFile(null)
-
   const handleNewChat = () => {
     threadIdRef.current = frappe.utils.get_random(10)
     sessionNameRef.current = null
@@ -269,37 +245,28 @@ export default function AIWidgetShell() {
 
   const handleSend = (value) => {
     const trimmed = (value || '').trim()
-    if (!trimmed && !attachedFile) return
+    if (!trimmed) return
     if (messageCount >= 10) return
     if (isThinkingRef.current) return
     isThinkingRef.current = true
     if (!sessionTitleRef.current) {
-      sessionTitleRef.current = (trimmed || 'Sent a file').slice(0, 40) + (trimmed.length > 40 ? '…' : '')
+      sessionTitleRef.current = trimmed.slice(0, 40) + (trimmed.length > 40 ? '…' : '')
     }
-    const sentAttachment = attachedFile
-    const userMessage = { id: uid(), role: 'user', text: trimmed, time: Date.now(), attachment: sentAttachment }
+    const userMessage = { id: uid(), role: 'user', text: trimmed, time: Date.now() }
     const thinkingMessage = { id: uid(), role: 'ai', type: 'thinking' }
     thinkingMsgIdRef.current = thinkingMessage.id
 
     setMessages((prev) => [...prev, userMessage, thinkingMessage])
     setInput('')
-    setAttachedFile(null)
     setIsThinking(true)
     setMessageCount((c) => c + 1)
-
-    let outgoingText = trimmed
-    if (sentAttachment) {
-      const fullUrl = sentAttachment.file_url.startsWith('/') ? (window.location.origin + sentAttachment.file_url) : sentAttachment.file_url
-      const fileNote = `[System note: The user has attached a file named "${sentAttachment.file_name}" available at ${fullUrl}. Use the appropriate tool to read/extract its contents before answering, then respond based on what it contains.]`
-      outgoingText = trimmed ? `${trimmed}\n\n${fileNote}` : `The user sent a file with no additional message.\n\n${fileNote}`
-    }
 
     const requestId = frappe.utils.get_random(10)
     currentRequestIdRef.current = requestId
 
     frappe.call({
       method: 'frappe_assistant_core.aiko.api.chat',
-      args: { message: outgoingText, thread_id: threadIdRef.current, request_id: requestId, reasoning_effort: reasoningEffort },
+      args: { message: trimmed, thread_id: threadIdRef.current, request_id: requestId, reasoning_effort: reasoningEffort },
       callback: (r) => {
         if (!r.message || !r.message.success) {
           setMessages((prev) => prev.filter((m) => m.id !== thinkingMessage.id).concat({ id: uid(), role: 'ai', text: 'Could not start the request. Please try again.', failed: true, retryText: trimmed, time: Date.now() }))
@@ -447,7 +414,6 @@ export default function AIWidgetShell() {
             />
             <FloatingComposer
               input={input} setInput={setInput} onSend={handleSend} onStop={handleStop} isThinking={isThinking}
-              onAttach={handleAttach} attachedFile={attachedFile} isUploading={isUploading} onRemoveAttachment={removeAttachment}
               limitReached={messageCount >= 10} onNewChat={handleNewChat}
               reasoningEffort={reasoningEffort} onReasoningEffortChange={setReasoningEffort}
               frozen={frozen} frozenReason={frozenReason} connectionError={connectionError}
@@ -481,7 +447,6 @@ export default function AIWidgetShell() {
         />
         <FloatingComposer
               input={input} setInput={setInput} onSend={handleSend} onStop={handleStop} isThinking={isThinking}
-              onAttach={handleAttach} attachedFile={attachedFile} isUploading={isUploading} onRemoveAttachment={removeAttachment}
               limitReached={messageCount >= 10} onNewChat={handleNewChat}
               reasoningEffort={reasoningEffort} onReasoningEffortChange={setReasoningEffort}
               frozen={frozen} frozenReason={frozenReason} connectionError={connectionError}
