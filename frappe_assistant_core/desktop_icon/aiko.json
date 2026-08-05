@@ -1,6 +1,6 @@
 {
  "app": "frappe_assistant_core",
- "bg_color": "gray",
+ "bg_color": "blue",
  "creation": "2026-07-31 07:41:38.159190",
  "docstatus": 0,
  "doctype": "Desktop Icon",
@@ -10,7 +10,8 @@
  "label": "AIKO",
  "link_to": "AIKO",
  "link_type": "Workspace Sidebar",
- "modified": "2026-07-31 07:41:38.159190",
+ "logo_url": "/assets/frappe_assistant_core/images/svg final.svg",
+ "modified": "2026-08-04 11:06:38.572143",
  "modified_by": "Administrator",
  "name": "AIKO",
  "owner": "Administrator",

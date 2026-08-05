@@ -24,14 +24,19 @@ def get_period_start(period: str, reset_day: int = 1) -> datetime:
         return prev_month.replace(day=min(reset_day, prev_month.day), hour=0, minute=0, second=0, microsecond=0)
 
 
-def _get_user_company(user: str) -> Optional[str]:
+def _resolve_pool(user: str, settings) -> tuple:
     """
-    Finds the Company for this login by going through Employee — there is no
-    direct link from User to Company in this schema. Employee.user_id links
-    to the login; Employee.organization is the actual Company (despite the
-    confusing fieldname/label).
+    Single site = single organization, so there is one site-wide pool shared
+    by every login on the site. The whole token budget for the organization
+    is set on Assistant Core Settings (not on the Company doctype), and token
+    usage is aggregated across all users of the site for the current period.
+
+    Returns (pool_id, limit, is_client). pool_id is never None for a login
+    once token limits are enabled — access is site-wide, there are no
+    per-company or per-user pools anymore.
     """
-    return frappe.db.get_value("Employee", {"user_id": user}, "organization")
+    limit = int(settings.get("token_limit") or 0)
+    return f"site:{frappe.local.site}", limit, True
 
 
 # Fieldname on the User doctype for the "Enable Assistant Access" checkbox.
@@ -45,22 +50,6 @@ def is_assistant_enabled(user: str) -> bool:
     if not frappe.db.has_column("User", ASSISTANT_ACCESS_FIELD):
         return True  # field not set up yet — don't block everyone by accident
     return bool(frappe.db.get_value("User", user, ASSISTANT_ACCESS_FIELD))
-
-
-def _resolve_pool(user: str, settings) -> tuple:
-    """
-    Access is company-membership-only: a login only gets a pool if it has an
-    Employee record linking it to a Company with a real token_limit set.
-    There is deliberately NO personal/standalone fallback pool anymore —
-    a user with "Enable Assistant Access" checked but no Employee->Company
-    link still gets no access. Returns (pool_id, limit, is_client);
-    pool_id is None when the user isn't eligible for any pool.
-    """
-    company = _get_user_company(user)
-    if not company:
-        return None, 0, False
-    limit = int(frappe.get_cached_doc("Company", company).get("token_limit") or 0)
-    return f"company:{company}", limit, True
 
 
 def get_pool_token_usage(pool_id: str, is_client: bool) -> int:
@@ -80,7 +69,15 @@ def get_pool_token_usage(pool_id: str, is_client: bool) -> int:
     if cached is not None:
         return int(cached)
 
-    if is_client:
+    if pool_id.startswith("site:"):
+        # Site-wide (single-organization) pool — aggregate EVERY login's
+        # usage on this site for the current period. No user/company filter:
+        # the whole site shares one budget.
+        chat_filter = "m.creation >= %s"
+        dash_filter = "m.creation >= %s"
+        param = period_start
+        join_user = ""
+    elif is_client:
         company = pool_id.split(":", 1)[1]
         # Bridge through Employee — only counts logins that are actually
         # enabled for the assistant, so a disabled employee's Employee
@@ -99,7 +96,7 @@ def get_pool_token_usage(pool_id: str, is_client: bool) -> int:
         param = user
         join_user = ""
 
-    total = frappe.db.sql(
+    total = int(frappe.db.sql(
         f"""
         SELECT COALESCE(SUM(m.total_tokens), 0)
         FROM `tabAiko Chat Message` m
@@ -108,9 +105,9 @@ def get_pool_token_usage(pool_id: str, is_client: bool) -> int:
         WHERE {chat_filter} AND m.creation >= %s
         """,
         (param, period_start),
-    )[0][0] or 0
+    )[0][0] or 0)
 
-    dashboard_total = frappe.db.sql(
+    dashboard_total = int(frappe.db.sql(
         f"""
         SELECT COALESCE(SUM(m.total_tokens), 0)
         FROM `tabAiko Dashboard Message` m
@@ -119,7 +116,7 @@ def get_pool_token_usage(pool_id: str, is_client: bool) -> int:
         WHERE {dash_filter} AND m.creation >= %s
         """,
         (param, period_start),
-    )[0][0] or 0
+    )[0][0] or 0)
 
     total = total + dashboard_total
 
@@ -174,23 +171,10 @@ def reserve_tokens(user: str, amount: int) -> Dict:
 
     pool_id, limit, is_client = _resolve_pool(user, settings)
 
-    if pool_id is None:
-        # Not linked to any Company via Employee — access is company-membership
-        # only, so this login gets no pool at all, regardless of its own
-        # "Enable Assistant Access" checkbox.
-        return {
-            "allowed": False,
-            "pool_id": None,
-            "reserved": 0,
-            "tokens_used": 0,
-            "tokens_limit": 0,
-            "reason": "AIKO access requires being linked to a company. Please contact your administrator.",
-        }
-
     if limit <= 0:
-        # Fail CLOSED: the Company exists but has no token_limit configured.
-        # Blocked, not unlimited — an admin must explicitly set a real
-        # number before this company's employees get access.
+        # Fail CLOSED: token limits are enabled but no budget is configured on
+        # Assistant Core Settings. Blocked, not unlimited — an admin must
+        # explicitly set the organization token limit before anyone gets access.
         return {
             "allowed": False,
             "pool_id": pool_id,
@@ -264,18 +248,10 @@ def check_token_limit(user: str) -> Dict:
 
         pool_id, limit, is_client = _resolve_pool(user, settings)
 
-        if pool_id is None:
-            return {
-                "allowed": False,
-                "tokens_used": 0,
-                "tokens_limit": 0,
-                "frozen": True,
-                "reason": "AIKO access requires being linked to a company. Please contact your administrator.",
-            }
-
         if limit <= 0:
-            # Fail CLOSED — see matching comment in reserve_tokens(). A
-            # Company with no real limit configured is blocked, not unlimited.
+            # Fail CLOSED — see matching comment in reserve_tokens(). Token
+            # limits are enabled but no budget is configured on Assistant
+            # Core Settings, so the site is blocked, not unlimited.
             return {
                 "allowed": False,
                 "tokens_used": 0,
@@ -317,7 +293,7 @@ def check_token_limit(user: str) -> Dict:
 
 
 def update_token_usage_cache(user: str, additional_tokens: int):
-    """Update the cached token usage after a new message is saved — for whichever pool (client or user) this login belongs to.
+    """Update the cached token usage after a new message is saved — the site-wide pool this login belongs to.
 
     Uses raw INCRBY (like reserve_tokens()/true_up_tokens()) rather than
     get_value/set_value, so this write lands on the same counter those
@@ -325,11 +301,26 @@ def update_token_usage_cache(user: str, additional_tokens: int):
     """
     settings = frappe.get_cached_doc("Assistant Core Settings")
     pool_id, _limit, is_client = _resolve_pool(user, settings)
-    if pool_id is None:
-        return  # not part of any company pool — nothing to update
     raw_key = _usage_key(pool_id)
     _ensure_seeded(raw_key, pool_id, is_client)
     frappe.cache().incrby(raw_key, additional_tokens)
+    frappe.cache().expire(raw_key, CACHE_TTL)
+    clear_frozen_cache(pool_id)
+
+
+def record_pool_usage(pool_id: Optional[str], tokens: int):
+    """Record actual token usage against a pool after a response completes.
+
+    Used by flows that don't pre-reserve tokens (e.g. the dashboard path),
+    where there is no reservation to true-up — the real cost is simply added
+    to the pool counter. Same raw INCRBY counter as reserve_tokens() /
+    true_up_tokens() / update_token_usage_cache().
+    """
+    if not pool_id or tokens <= 0:
+        return
+    raw_key = _usage_key(pool_id)
+    _ensure_seeded(raw_key, pool_id, True)
+    frappe.cache().incrby(raw_key, tokens)
     frappe.cache().expire(raw_key, CACHE_TTL)
     clear_frozen_cache(pool_id)
 
