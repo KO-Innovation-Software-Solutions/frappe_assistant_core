@@ -26,6 +26,7 @@
   "audit_log_retention_days",
   "token_limits_section",
   "enable_token_limits",
+  "token_limit",
   "token_limit_column_break",
   "token_limit_period",
   "token_limit_reset_day",
@@ -197,17 +198,24 @@
   },
   {
    "collapsible": 1,
-   "description": "Configure per-user token usage limits. When a user exceeds their limit, the chat will freeze until the period resets.",
+   "description": "Configure the organization-wide token usage limit. When the whole site exceeds its limit, the chat will freeze until the period resets.",
    "fieldname": "token_limits_section",
    "fieldtype": "Section Break",
    "label": "Token Limits"
   },
   {
    "default": "0",
-   "description": "Enable per-user token usage limits for AIKO chat. Users who exceed the limit will be blocked from sending messages.",
+   "description": "Enable organization-wide token usage limits for AIKO chat. The whole site shares one budget; once it is exhausted, all users are blocked from sending messages.",
    "fieldname": "enable_token_limits",
    "fieldtype": "Check",
    "label": "Enable Token Limits"
+  },
+  {
+   "depends_on": "eval:doc.enable_token_limits",
+   "description": "Total token limit for this organization (site). Each site belongs to a single organization — every user on this site shares this budget, and token usage is aggregated across the whole site for the selected period.",
+   "fieldname": "token_limit",
+   "fieldtype": "Int",
+   "label": "Organization Token Limit"
   },
   {
    "depends_on": "eval:doc.enable_token_limits",
@@ -217,7 +225,7 @@
   {
    "default": "Monthly",
    "depends_on": "eval:doc.enable_token_limits",
-   "description": "Period over which token usage is tracked and compared to the limit.",
+   "description": "Period over which the organization-wide token usage is tracked and compared to the limit.",
    "fieldname": "token_limit_period",
    "fieldtype": "Select",
    "label": "Token Limit Period",

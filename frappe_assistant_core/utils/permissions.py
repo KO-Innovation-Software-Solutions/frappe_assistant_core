@@ -73,6 +73,55 @@ def get_audit_permission_query_conditions(user=None):
     return "1=0"
 
 
+def get_aiko_session_permission_query_conditions(user=None, doctype=None):
+    """Permission query conditions for Aiko Chat/Dashboard Session.
+
+    Admins see everything; Assistant Users only see their own sessions.
+    """
+    if not user:
+        user = frappe.session.user
+
+    if user == "Administrator":
+        return ""
+
+    user_roles = frappe.get_roles(user)
+    if any(role in user_roles for role in ASSISTANT_ADMIN_ROLES):
+        return ""
+
+    escaped_user = frappe.db.escape(user)
+    if "Assistant User" in user_roles:
+        return f"`tab{doctype}`.user = {escaped_user}"
+
+    return "1=0"
+
+
+def get_aiko_message_permission_query_conditions(user=None, doctype=None):
+    """Permission query conditions for Aiko Chat/Dashboard Message.
+
+    Admins see everything; Assistant Users only see messages that belong
+    to sessions owned by them.
+    """
+    if not user:
+        user = frappe.session.user
+
+    if user == "Administrator":
+        return ""
+
+    user_roles = frappe.get_roles(user)
+    if any(role in user_roles for role in ASSISTANT_ADMIN_ROLES):
+        return ""
+
+    session_doctype = "Aiko Chat Session" if doctype == "Aiko Chat Message" else "Aiko Dashboard Session"
+    escaped_user = frappe.db.escape(user)
+    if "Assistant User" in user_roles:
+        return (
+            f"`tab{doctype}`.session IN "
+            f"(SELECT name FROM `tab{session_doctype}` WHERE user = {escaped_user})"
+        )
+
+    return "1=0"
+
+
 def check_assistant_permission(user=None):
     """Check if user has assistant access permission"""
     if not user:

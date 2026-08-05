@@ -3,6 +3,7 @@ import WidgetHeader from './WidgetHeader'
 import ChatTranscript from './ChatTranscript'
 import FloatingComposer from './FloatingComposer'
 import SessionsPanel from './SessionsPanel'
+import aikoIcon from './aiko-icon.svg'
 
 let nextId = 0
 function uid() { return `msg-${Date.now()}-${++nextId}` }
@@ -345,9 +346,13 @@ export default function AIWidgetShell() {
       <button
         onClick={openWidget}
         aria-label="Open AI assistant"
-        className="fixed bottom-6 right-6 z-[9999] grid h-16 w-16 place-items-center rounded-full bg-gradient-to-br from-brand-600 to-fuchsia-500 text-white shadow-widget transition hover:-translate-y-0.5 focus-ring"
+        className="group fixed bottom-6 right-6 z-[9999] grid h-16 w-16 place-items-center rounded-full bg-gradient-to-br from-brand-600 to-fuchsia-500 text-white shadow-widget transition hover:-translate-y-0.5 focus-ring"
       >
-        ✦
+        <span className="pointer-events-none absolute right-full mr-3 whitespace-nowrap rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white opacity-0 shadow-lg transition-opacity duration-200 group-hover:opacity-100">
+          Hi, I'm AIKO — your AI assistant
+          <span className="absolute left-full top-1/2 -translate-y-1/2 border-4 border-transparent border-l-slate-900" />
+        </span>
+        <img src={aikoIcon} alt="AIKO" className="h-9 w-9 object-contain" />
         {hasUnread && <span className="absolute -right-0.5 -top-0.5 h-3.5 w-3.5 rounded-full border-2 border-white bg-red-500" />}
       </button>
     )

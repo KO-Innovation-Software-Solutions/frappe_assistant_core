@@ -116,6 +116,10 @@ permission_query_conditions = {
     "Assistant Audit Log": "frappe_assistant_core.utils.permissions.get_audit_permission_query_conditions",
     "Prompt Template": "frappe_assistant_core.utils.permissions.get_prompt_permission_query_conditions",
     "FAC Skill": "frappe_assistant_core.utils.permissions.get_skill_permission_query_conditions",
+    "Aiko Chat Session": "frappe_assistant_core.utils.permissions.get_aiko_session_permission_query_conditions",
+    "Aiko Dashboard Session": "frappe_assistant_core.utils.permissions.get_aiko_session_permission_query_conditions",
+    "Aiko Chat Message": "frappe_assistant_core.utils.permissions.get_aiko_message_permission_query_conditions",
+    "Aiko Dashboard Message": "frappe_assistant_core.utils.permissions.get_aiko_message_permission_query_conditions",
 }
 
 # has_permission = {

@@ -402,16 +402,6 @@ export function DashboardCanvas({ library }) {
 
             <div style={{ width: 1, height: 20, background: "#E5E7EB", margin: "0 4px" }} />
 
-            <button onClick={() => { closeAllDropdowns(); setShowSource(!showSource); }} style={{
-              background: "none", border: "1px solid #9ca3af", borderRadius: 4, cursor: "pointer",
-              color: "#6d3fa6", fontSize: 11, padding: "5px 10px", fontWeight: 600, fontFamily: "Inter, sans-serif",
-              transition: "all 0.12s",
-            }}
-onMouseEnter={(e) => { e.currentTarget.style.background = "#F6F5F9"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "white"; }}
-            >
-              {showSource ? "Hide code" : "View code"}
-            </button>
             <button onClick={handleSaveArtifact} disabled={!dashboardCode || isSaving} style={{
               background: dashboardCode ? "#1F2621" : "#E5E7EB",
               border: "none", borderRadius: 4, cursor: dashboardCode ? "pointer" : "not-allowed",
