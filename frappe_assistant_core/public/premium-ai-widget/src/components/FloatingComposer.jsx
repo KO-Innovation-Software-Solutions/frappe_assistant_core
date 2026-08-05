@@ -1,6 +1,5 @@
 import { useState, useRef } from 'react'
 import MicIcon from './icons/MicIcon'
-import AttachIcon from './icons/AttachIcon'
 import SendIcon from './icons/SendIcon'
 
 function ToolButton({ label, children, onClick, active }) {
@@ -25,23 +24,14 @@ const REASONING_OPTIONS = [
   { value: 'xhigh', label: 'Max' },
 ]
 
-export default function FloatingComposer({ input, setInput, onSend, onStop, isThinking, onAttach, attachedFile, isUploading, onRemoveAttachment, limitReached, onNewChat, reasoningEffort, onReasoningEffortChange, frozen, frozenReason, connectionError, tokenUsage }) {
+export default function FloatingComposer({ input, setInput, onSend, onStop, isThinking, limitReached, onNewChat, reasoningEffort, onReasoningEffortChange, frozen, frozenReason, connectionError, tokenUsage }) {
   const [isRecording, setIsRecording] = useState(false)
   const recognitionRef = useRef(null)
-  const fileInputRef = useRef(null)
 
   const handleSubmit = (e) => {
     e.preventDefault()
     if (isThinking || limitReached || frozen || connectionError) return
     onSend(input)
-  }
-
-  const handleAttachClick = () => fileInputRef.current?.click()
-
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0]
-    if (file && onAttach) onAttach(file)
-    e.target.value = ''
   }
 
   const toggleMic = () => {
@@ -95,18 +85,6 @@ export default function FloatingComposer({ input, setInput, onSend, onStop, isTh
 
   return (
     <footer className="shrink-0 border-t border-brand-100/80 bg-white/72 px-4 py-4 backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/70">
-      {(attachedFile || isUploading) && (
-        <div className="mb-2 flex items-center gap-2 rounded-full border border-brand-100 bg-white/80 px-3 py-1.5 text-xs dark:border-white/10 dark:bg-white/10">
-          {isUploading ? (
-            <span className="text-slate-500 dark:text-slate-300">Uploading…</span>
-          ) : (
-            <>
-              <span className="truncate text-slate-700 dark:text-slate-200">{attachedFile.file_name}</span>
-              <button type="button" onClick={onRemoveAttachment} aria-label="Remove attachment" className="ml-auto text-slate-400 hover:text-red-500">✕</button>
-            </>
-          )}
-        </div>
-      )}
       {frozen && (
         <div className="mb-2 flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
           <span>{frozenReason || 'Token limit exceeded. Please contact your administrator.'}</span>
@@ -124,9 +102,7 @@ export default function FloatingComposer({ input, setInput, onSend, onStop, isTh
         </div>
       )}
       <form onSubmit={handleSubmit} className="flex items-center gap-2 rounded-full border border-white/70 bg-white/85 px-3 py-2 shadow-[0_10px_30px_rgba(88,56,255,0.10)] dark:border-white/10 dark:bg-white/10">
-        <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileChange} />
         <ToolButton label="Voice input" onClick={toggleMic} active={isRecording}><MicIcon /></ToolButton>
-        <ToolButton label="Attachment" onClick={handleAttachClick}><AttachIcon /></ToolButton>
         {!frozen && !connectionError && (
           <select
             value={reasoningEffort}
@@ -146,7 +122,7 @@ export default function FloatingComposer({ input, setInput, onSend, onStop, isTh
             frozen ? 'Token limit exceeded.'
             : connectionError ? 'Connection lost.'
             : limitReached ? 'Message limit reached.'
-            : 'Ask anything or drop a file...'
+            : 'Ask anything...'
           }
           onKeyDown={(e) => {
             if (e.key === 'Enter' && isThinking) {
