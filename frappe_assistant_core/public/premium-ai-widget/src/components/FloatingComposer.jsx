@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import MicIcon from './icons/MicIcon'
 import SendIcon from './icons/SendIcon'
 
@@ -27,6 +27,18 @@ const REASONING_OPTIONS = [
 export default function FloatingComposer({ input, setInput, onSend, onStop, isThinking, limitReached, onNewChat, reasoningEffort, onReasoningEffortChange, frozen, frozenReason, connectionError, tokenUsage }) {
   const [isRecording, setIsRecording] = useState(false)
   const recognitionRef = useRef(null)
+  const textareaRef = useRef(null)
+
+  // Resizes on every change to `input`, not just keystrokes. This is what
+  // catches the programmatic setInput('') after sending — onInput alone
+  // only fires for real DOM input events, so a cleared value via React state
+  // left the tall height in place until the next keystroke recalculated it.
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, 96) + 'px'
+  }, [input])
 
   const handleSubmit = (e) => {
     e.preventDefault()
@@ -115,6 +127,7 @@ export default function FloatingComposer({ input, setInput, onSend, onStop, isTh
           </select>
         )}
         <textarea
+          ref={textareaRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           disabled={limitReached || frozen || connectionError}
@@ -125,6 +138,7 @@ export default function FloatingComposer({ input, setInput, onSend, onStop, isTh
             : 'Ask anything...'
           }
           onKeyDown={(e) => {
+            e.stopPropagation()
             if (e.key === 'Enter' && isThinking) {
               e.preventDefault()
               return
@@ -137,10 +151,6 @@ export default function FloatingComposer({ input, setInput, onSend, onStop, isTh
           rows={1}
           className="max-h-24 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none dark:text-white dark:placeholder:text-slate-400"
           style={{ overflowY: input.split('\n').length > 3 ? 'auto' : 'hidden' }}
-          onInput={(e) => {
-            e.target.style.height = 'auto'
-            e.target.style.height = Math.min(e.target.scrollHeight, 96) + 'px'
-          }}
         />
         {isThinking ? (
           <button

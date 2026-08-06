@@ -204,6 +204,19 @@ export default function AIWidgetShell() {
     setHasUnread(false)
   }
 
+  // Lets external UI (e.g. a nav bar button) open the widget without needing
+  // direct access to this component's state. Two hooks are exposed:
+  // a global function and a custom DOM event — use whichever fits the caller.
+  useEffect(() => {
+    window.openAikoWidget = openWidget
+    const onExternalOpen = () => openWidget()
+    window.addEventListener('aiko:open', onExternalOpen)
+    return () => {
+      delete window.openAikoWidget
+      window.removeEventListener('aiko:open', onExternalOpen)
+    }
+  }, [])
+
   const handleNewChat = () => {
     threadIdRef.current = frappe.utils.get_random(10)
     sessionNameRef.current = null
@@ -370,8 +383,6 @@ export default function AIWidgetShell() {
                     onClick={() => handleLoadSession(s.name, s.thread_id)}
                     className={`w-full rounded-xl px-3 py-2 text-left transition-colors hover:bg-brand-50 ${s.name === sessionNameRef.current ? 'bg-brand-50' : ''}`}
                   >
-                    <div className="truncate text-sm font-medium text-slate-900">{shortName(firstMessages[s.name] || s.preview)}</div>
-                    <div className="text-[11px] text-slate-400">{formatDayTime(s.preview_time || s.last_active)}</div>
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-sm font-semibold text-slate-900">{shortName(firstMessages[s.name] || s.preview)}</div>
