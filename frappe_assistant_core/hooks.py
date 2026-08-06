@@ -252,7 +252,7 @@ standard_roles = [
 # Boot
 # -----
 
-# boot_session = "frappe_assistant_core.boot.boot_session"
+boot_session = "frappe_assistant_core.utils.boot.add_assistant_access_to_boot"
 
 # Startup
 # -------

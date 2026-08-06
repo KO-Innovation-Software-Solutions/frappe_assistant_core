@@ -318,31 +318,14 @@ def _check_assistant_enabled(user: str) -> bool:
     """
     Check if the assistant_enabled field is enabled for the user.
 
-    Args:
-        user: Username to check
-
-    Returns:
-        bool: True if assistant is enabled, False otherwise
+    Single source of truth is utils.token_limits.is_assistant_enabled().
+    Agreed default: column missing -> open; value NULL/0 -> disabled.
     """
-    try:
-        # Get the assistant_enabled field value for the user
-        assistant_enabled = frappe.db.get_value("User", user, "assistant_enabled")
+    from frappe_assistant_core.utils.token_limits import is_assistant_enabled
 
-        # If the field doesn't exist or is not set, default to disabled for security
-        if assistant_enabled is None:
-            api_logger.debug(f"assistant_enabled field not found for user {user}, defaulting to disabled")
-            return False
-
-        # Convert to boolean (handles 0/1, "0"/"1", and boolean values)
-        is_enabled = bool(int(assistant_enabled)) if assistant_enabled else False
-
-        api_logger.debug(f"User {user} assistant_enabled: {is_enabled}")
-        return is_enabled
-
-    except Exception as e:
-        # If there's any error checking the field, default to disabled for security
-        api_logger.error(f"Error checking assistant_enabled for user {user}: {e}")
-        return False
+    is_enabled = is_assistant_enabled(user)
+    api_logger.debug(f"User {user} assistant_enabled: {is_enabled}")
+    return is_enabled
 @frappe.whitelist()
 def execute_tool(tool_name: str, arguments=None) -> Dict[str, Any]:
     """Execute a single tool via the ToolRegistry and return its result.

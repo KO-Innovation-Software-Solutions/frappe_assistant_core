@@ -41,14 +41,14 @@ mcp = MCPServer(_get_mcp_server_name())
 
 
 def _check_assistant_enabled(user: str) -> bool:
-    """Check if assistant is enabled for user."""
-    try:
-        assistant_enabled = frappe.db.get_value("User", user, "assistant_enabled")
-        if assistant_enabled is None:
-            return False
-        return bool(int(assistant_enabled)) if assistant_enabled else False
-    except Exception:
-        return False
+    """Check if assistant is enabled for user.
+
+    Delegates to the single source of truth utils.token_limits.is_assistant_enabled().
+    Agreed default: column missing -> open; value NULL/0 -> disabled.
+    """
+    from frappe_assistant_core.utils.token_limits import is_assistant_enabled
+
+    return is_assistant_enabled(user)
 
 
 def _import_tools():
