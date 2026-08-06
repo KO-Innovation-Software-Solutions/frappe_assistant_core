@@ -1303,6 +1303,26 @@ def _get_first_user_message(session_name: str) -> str | None:
     return None
 
 
+def _clean_dashboard_title(text: str) -> str:
+    """Turn a raw title/message into a plain sentence with no digits.
+
+    Strips every digit and digit-run so titles like 'Q4 2024 P&L' or 'Top 5
+    Vehicles' become clean descriptive sentences ('Q P&L' → cleaned further,
+    'Top  Vehicles' → 'Top Vehicles'). Also collapses duplicate whitespace
+    and trims to a sane length so it stays readable as a dashboard heading.
+    """
+    if not text:
+        return text
+    import re
+
+    cleaned = re.sub(r"\d+", " ", text)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    cleaned = cleaned.rstrip(" ··-—_—")
+    if len(cleaned) > 120:
+        cleaned = cleaned[:117].rstrip() + "…"
+    return cleaned
+
+
 def _title_from_session(thread_id: str, user: str) -> str:
     session_name = frappe.db.get_value(
         "Aiko Dashboard Session",
@@ -1312,8 +1332,8 @@ def _title_from_session(thread_id: str, user: str) -> str:
     if session_name:
         first_msg = _get_first_user_message(session_name)
         if first_msg:
-            return first_msg
-    return f"Dashboard {thread_id[:8]}"
+            return _clean_dashboard_title(first_msg)
+    return _clean_dashboard_title(f"Dashboard {thread_id[:8]}")
 
 
 @frappe.whitelist(methods=["POST"])
@@ -1342,7 +1362,7 @@ def save_dashboard_artifact(thread_id: str, title: str = None):
     row = last_msg[0]
     doc = frappe.get_doc({
         "doctype": "Aiko Dashboard Artifact",
-        "title": title or _title_from_session(thread_id, frappe.session.user),
+        "title": _clean_dashboard_title(title) or _title_from_session(thread_id, frappe.session.user),
         "ui": row["ui"],
         "tool_calls_snapshot": row["tool_calls_snapshot"],
         "data_manifest": row["data_manifest"],

@@ -42,8 +42,18 @@ function init() {
   if (typeof frappe === 'undefined') return
   if (frappe.session.user === 'Guest') return
   if (window.location.pathname.includes('/aiko_chat')) return
-
+  if (!isAssistantEnabledForUser()) return
   setTimeout(mountWidget, 50)
+}
+
+// Mirrors the backend gate (utils/token_limits.is_assistant_enabled): hidden
+// only when the flag is explicitly off. If the flag is missing/undefined we
+// fail OPEN and keep showing the widget so nobody loses access by accident.
+function isAssistantEnabledForUser() {
+  const boot = typeof frappe !== 'undefined' ? frappe.boot : undefined
+  const enabled = boot && boot.user ? boot.user.assistant_enabled : undefined
+  if (enabled === undefined || enabled === null) return true
+  return Number(enabled) === 1
 }
 
 if (document.readyState === 'loading') {

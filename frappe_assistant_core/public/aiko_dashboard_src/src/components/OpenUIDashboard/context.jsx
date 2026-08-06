@@ -38,6 +38,48 @@ function normalizeDsl(code) {
   }
   return "root = " + t;
 }
+function unwrapRegistryWrapper(value) {
+  if (value && typeof value === "object" && !Array.isArray(value) && "result" in value) {
+    const inner = value.result;
+    if (inner !== undefined && inner !== null) return inner;
+  }
+  return value;
+}
+function cleanCachedResult(value) {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string") return value;
+  const t = value.trim();
+  if (t.startsWith("{") || t.startsWith("[")) {
+    try {
+      return unwrapRegistryWrapper(JSON.parse(t));
+    } catch { /* fall through to repr parsing */ }
+  }
+  const m = t.match(/text=['"]([\s\S]*?)['"]\s+(annotations|meta)\s*=/);
+  if (m) {
+    const blob = m[1].replace(/\\'/g, "'");
+    try {
+      return unwrapRegistryWrapper(JSON.parse(blob));
+    } catch { /* ignore */ }
+  }
+  try {
+    const arr = JSON.parse(t);
+    if (Array.isArray(arr)) {
+      const texts = arr
+        .filter((i) => i && typeof i === "object" && i.type === "text" && typeof i.text === "string")
+        .map((i) => i.text);
+      if (texts.length) {
+        const payload = texts.join("\n");
+        try {
+          return unwrapRegistryWrapper(JSON.parse(payload));
+        } catch {
+          return texts.length > 1 ? payload : texts[0];
+        }
+      }
+    }
+  } catch { /* ignore */ }
+
+  return undefined;
+}
 
 function getOrCreateThreadId() {
   let id = localStorage.getItem("aiko_dashboard_thread_id");
@@ -159,7 +201,10 @@ export function DashboardProvider({ children }) {
         if (!toolName) continue;
         const key = makeCanonicalKey(toolName, args);
         if (queryMapRef.current[key] !== undefined) continue; // don't clobber a live/refreshed value
-        queryMapRef.current[key] = normaliseToolResultForFrontend(toolName, c?.result);
+        const clean = cleanCachedResult(c?.result);
+        if (clean !== undefined) {
+          queryMapRef.current[key] = normaliseToolResultForFrontend(toolName, clean);
+        }
         if (!queriesMetaRef.current.some((q) => q.tool === toolName && JSON.stringify(q.args || {}) === JSON.stringify(args))) {
           queriesMetaRef.current.push({ key, tool: toolName, args, statement_id: null });
         }
@@ -414,8 +459,9 @@ export function DashboardProvider({ children }) {
     }
     const key = makeCanonicalKey(tool_name, args);
     const cache = queryMapRef.current || {};
-    if (Object.prototype.hasOwnProperty.call(cache, key) && cache[key] !== undefined) {
-      return cache[key];
+    const cached = cleanCachedResult(cache[key]);
+    if (cached !== undefined) {
+      return cached;
     }
     frappe.call({
       method: "frappe_assistant_core.api.assistant_api.execute_tool",
@@ -520,7 +566,7 @@ export function DashboardProvider({ children }) {
     }
 
     const canonicalKey = makeCanonicalKey(realToolName, realArgs);
-    const cached = queryMapRef.current[canonicalKey];
+    const cached = cleanCachedResult(queryMapRef.current[canonicalKey]);
     if (cached !== undefined) {
       return { isError: false, content: [{ type: "text", text: JSON.stringify(cached) }] };
     }
