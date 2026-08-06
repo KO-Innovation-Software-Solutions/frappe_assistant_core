@@ -8,7 +8,11 @@ export default function WidgetHeader({ onNewChat, onHistory, onFullscreen, onClo
   return (
     <header className="flex items-center justify-between gap-3 border-b border-brand-100/80 bg-gradient-to-r from-white/70 to-brand-50/60 px-4 py-3 dark:border-white/10 dark:from-white/5 dark:to-brand-500/10">
       <div>
-        <div className="text-sm font-semibold text-slate-900 dark:text-white">AIKO</div>
+        <div className="text-sm font-semibold text-slate-900 dark:text-white">AIKO
+          <span className="ml-1 align-super text-[9px] font-medium text-slate-400">
+            BETA
+          </span>
+        </div>
         <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-300">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulseSoft"></span>
           <span>Online</span>
